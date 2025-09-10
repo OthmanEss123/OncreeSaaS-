@@ -1,0 +1,127 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Updated color tokens to match design brief with professional gray/blue palette */
+  --background: #ffffff; /* White background */
+  --foreground: #374151; /* Gray-700 for main text */
+  --card: #f8fafc; /* Light gray background for cards */
+  --card-foreground: #1f2937; /* Dark gray text for cards */
+  --popover: #ffffff; /* White popover background */
+  --popover-foreground: #374151; /* Gray-700 popover text */
+  --primary: #6366f1; /* Blue primary color */
+  --primary-foreground: #ffffff; /* White text on primary */
+  --secondary: #4b5563; /* Gray-600 secondary */
+  --secondary-foreground: #ffffff; /* White text on secondary */
+  --muted: #f9fafb; /* Very light gray muted background */
+  --muted-foreground: #4b5563; /* Gray-600 muted text */
+  --accent: #6366f1; /* Blue accent color */
+  --accent-foreground: #ffffff; /* White accent text */
+  --destructive: #ef4444; /* Red destructive */
+  --destructive-foreground: #ffffff; /* White destructive text */
+  --border: #e5e7eb; /* Gray-200 border */
+  --input: #f1f5f9; /* Light input background */
+  --ring: rgba(99, 102, 241, 0.5); /* Blue ring with opacity */
+  --chart-1: #6366f1; /* Blue chart color */
+  --chart-2: #4f46e5; /* Indigo chart color */
+  --chart-3: #3b82f6; /* Blue-500 chart color */
+  --chart-4: #22c55e; /* Green chart color */
+  --chart-5: #fbbf24; /* Yellow chart color */
+  --radius: 0.5rem; /* Rounded corners */
+  --sidebar: #f8fafc; /* Light gray sidebar */
+  --sidebar-foreground: #374151; /* Gray-700 sidebar text */
+  --sidebar-primary: #ffffff; /* White sidebar primary */
+  --sidebar-primary-foreground: #374151; /* Gray-700 sidebar primary text */
+  --sidebar-accent: #6366f1; /* Blue sidebar accent */
+  --sidebar-accent-foreground: #ffffff; /* White sidebar accent text */
+  --sidebar-border: #e5e7eb; /* Gray-200 sidebar border */
+  --sidebar-ring: rgba(99, 102, 241, 0.5); /* Blue sidebar ring */
+}
+
+.dark {
+  /* Updated dark mode tokens for consistency */
+  --background: #0f172a; /* Slate-900 dark background */
+  --foreground: #f1f5f9; /* Slate-100 light text */
+  --card: #1e293b; /* Slate-800 dark card background */
+  --card-foreground: #f1f5f9; /* Slate-100 light card text */
+  --popover: #0f172a; /* Slate-900 dark popover */
+  --popover-foreground: #f1f5f9; /* Slate-100 light popover text */
+  --primary: #6366f1; /* Blue primary (same in dark) */
+  --primary-foreground: #ffffff; /* White text on primary */
+  --secondary: #475569; /* Slate-600 secondary */
+  --secondary-foreground: #f1f5f9; /* Slate-100 text on secondary */
+  --muted: #1e293b; /* Slate-800 dark muted background */
+  --muted-foreground: #94a3b8; /* Slate-400 muted text */
+  --accent: #6366f1; /* Blue accent (same in dark) */
+  --accent-foreground: #ffffff; /* White accent text */
+  --destructive: #ef4444; /* Red destructive (same in dark) */
+  --destructive-foreground: #ffffff; /* White destructive text */
+  --border: #334155; /* Slate-700 dark border */
+  --input: #1e293b; /* Slate-800 dark input */
+  --ring: rgba(99, 102, 241, 0.5); /* Blue ring (same in dark) */
+  --chart-1: #6366f1; /* Blue chart */
+  --chart-2: #4f46e5; /* Indigo chart */
+  --chart-3: #3b82f6; /* Blue-500 chart */
+  --chart-4: #22c55e; /* Green chart */
+  --chart-5: #fbbf24; /* Yellow chart */
+  --sidebar: #1e293b; /* Slate-800 dark sidebar */
+  --sidebar-foreground: #f1f5f9; /* Slate-100 sidebar text */
+  --sidebar-primary: #334155; /* Slate-700 sidebar primary */
+  --sidebar-primary-foreground: #f1f5f9; /* Slate-100 sidebar primary text */
+  --sidebar-accent: #6366f1; /* Blue sidebar accent */
+  --sidebar-accent-foreground: #ffffff; /* White sidebar accent text */
+  --sidebar-border: #334155; /* Slate-700 sidebar border */
+  --sidebar-ring: rgba(99, 102, 241, 0.5); /* Blue sidebar ring */
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
