@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test - Connexion Journal de Travail</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-left: 4px solid #2196F3;
+            margin: 20px 0;
+        }
+        .button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 10px 5px;
+        }
+        .button:hover {
+            background: #45a049;
+        }
+        .button.secondary {
+            background: #2196F3;
+        }
+        .button.secondary:hover {
+            background: #0b7dda;
+        }
+        .result {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 4px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .success {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .error {
+            color: #f44336;
+            font-weight: bold;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .input-group {
+            margin: 15px 0;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Test de Connexion - Journal de Travail</h1>
+        
+        <div class="info">
+            <strong>📋 Information:</strong> Cette page teste la connexion entre le frontend et le backend pour le tableau "Journal de Travail".
+        </div>
+
+        <div class="input-group">
+            <label>Token d'authentification:</label>
+            <input type="text" id="authToken" placeholder="Entrez votre token Bearer...">
+            <small style="color: #666;">Trouvez votre token dans localStorage → authToken</small>
+        </div>
+
+        <div>
+            <button class="button" onclick="testConnection()">🚀 Tester la Connexion</button>
+            <button class="button secondary" onclick="getToken()">🔑 Récupérer le Token depuis localStorage</button>
+            <button class="button secondary" onclick="clearResults()">🗑️ Effacer les résultats</button>
+        </div>
+
+        <div id="result" class="result" style="display: none;"></div>
+        <div id="tableContainer"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api/work-logs-grouped';
+
+        function getToken() {
+            // Essayer de récupérer le token depuis localStorage
+            const token = localStorage.getItem('authToken');
+            const tokenInput = document.getElementById('authToken');
+            
+            if (token) {
+                tokenInput.value = token;
+                showResult(`<span class="success">✅ Token récupéré avec succès!</span>`);
+            } else {
+                showResult(`<span class="error">❌ Aucun token trouvé dans localStorage</span>`);
+            }
+        }
+
+        async function testConnection() {
+            const token = document.getElementById('authToken').value;
+            
+            if (!token) {
+                showResult(`<span class="error">❌ Veuillez entrer un token d'authentification</span>`);
+                return;
+            }
+
+            showResult(`<span>⏳ Connexion en cours...</span>`);
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const responseText = await response.text();
+                console.log('Response:', responseText);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${responseText}`);
+                }
+
+                const result = JSON.parse(responseText);
+                
+                if (result.success && result.data) {
+                    displayResults(result.data);
+                } else {
+                    showResult(`<span class="error">❌ Format de réponse invalide</span><pre>${JSON.stringify(result, null, 2)}</pre>`);
+                }
+
+            } catch (error) {
+                showResult(`<span class="error">❌ Erreur: ${error.message}</span>`);
+                console.error('Error:', error);
+            }
+        }
+
+        function displayResults(data) {
+            let html = `<span class="success">✅ Connexion réussie! ${data.length} mois trouvé(s)</span>`;
+            html += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            
+            showResult(html);
+
+            // Afficher le tableau
+            if (data.length > 0) {
+                let tableHtml = `
+                    <h2>📊 Tableau des résultats</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Mois</th>
+                                <th>Jours travaillés</th>
+                                <th>Weekend travaillé</th>
+                                <th>Type d'absence</th>
+                                <th>Jours d'absence</th>
+                                <th>Type de travail</th>
+                                <th>Jours de type</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                data.forEach(item => {
+                    tableHtml += `
+                        <tr>
+                            <td>${item.monthName}</td>
+                            <td>${item.daysWorked || 0}</td>
+                            <td>${item.weekendWork || '-'}</td>
+                            <td>${item.absenceType || '-'}</td>
+                            <td>${item.absences || '-'}</td>
+                            <td>${item.workType || '-'}</td>
+                            <td>${item.workTypeDays || '-'}</td>
+                        </tr>
+                    `;
+                });
+
+                tableHtml += `
+                        </tbody>
+                    </table>
+                `;
+
+                document.getElementById('tableContainer').innerHTML = tableHtml;
+            }
+        }
+
+        function showResult(html) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = html;
+            resultDiv.style.display = 'block';
+        }
+
+        function clearResults() {
+            document.getElementById('result').style.display = 'none';
+            document.getElementById('tableContainer').innerHTML = '';
+        }
+
+        // Essayer de récupérer le token automatiquement au chargement
+        window.addEventListener('load', getToken);
+    </script>
+</body>
+</html>
+
+
+

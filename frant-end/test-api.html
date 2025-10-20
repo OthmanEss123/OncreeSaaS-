@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test API Password Recovery</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Test API Password Recovery</h1>
+    
+    <div class="test-section">
+        <h3>Test 1: Email valide</h3>
+        <button onclick="testValidEmail()">Tester avec jean.dupont@trocair.com</button>
+        <div id="result1"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Test 2: Email invalide</h3>
+        <button onclick="testInvalidEmail()">Tester avec inexistant@example.com</button>
+        <div id="result2"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Test 3: Réinitialisation (nécessite un token valide)</h3>
+        <input type="text" id="tokenInput" placeholder="Collez votre token ici" style="width: 300px; padding: 5px;">
+        <button onclick="testResetPassword()">Tester la réinitialisation</button>
+        <div id="result3"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api';
+        
+        async function testValidEmail() {
+            const resultDiv = document.getElementById('result1');
+            resultDiv.innerHTML = '<p>Test en cours...</p>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/forgot-password`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'jean.dupont@trocair.com'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <h4>✅ Succès!</h4>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                            ${data.reset_url ? `<p><strong>URL de réinitialisation:</strong> <a href="${data.reset_url}" target="_blank">${data.reset_url}</a></p>` : ''}
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ Erreur ${response.status}</h4>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Erreur de connexion</h4>
+                        <p>${error.message}</p>
+                        <p>Vérifiez que le serveur Laravel est démarré sur le port 8000</p>
+                    </div>
+                `;
+            }
+        }
+        
+        async function testInvalidEmail() {
+            const resultDiv = document.getElementById('result2');
+            resultDiv.innerHTML = '<p>Test en cours...</p>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/forgot-password`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'inexistant@example.com'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.status === 404) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <h4>✅ Comportement attendu!</h4>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ Erreur inattendue ${response.status}</h4>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Erreur de connexion</h4>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+        
+        async function testResetPassword() {
+            const token = document.getElementById('tokenInput').value;
+            const resultDiv = document.getElementById('result3');
+            
+            if (!token) {
+                resultDiv.innerHTML = '<div class="error"><p>Veuillez entrer un token</p></div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<p>Test en cours...</p>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/reset-password`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        token: token,
+                        password: 'nouveau_mot_de_passe_123'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <h4>✅ Réinitialisation réussie!</h4>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ Erreur ${response.status}</h4>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Erreur de connexion</h4>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
