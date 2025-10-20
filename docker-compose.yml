@@ -1,0 +1,73 @@
+
+
+services:
+  # Note: Using host's MySQL database instead of containerized MySQL
+  
+  # Laravel Backend
+  backend:
+    build:
+      context: ./back-end
+      dockerfile: Dockerfile
+    container_name: oncree_backend
+    restart: unless-stopped
+    working_dir: /var/www/html
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_KEY: ${APP_KEY}
+      DB_CONNECTION: mysql
+      DB_HOST: host.docker.internal
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE:-laravel}
+      DB_USERNAME: ${DB_USERNAME:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+    volumes:
+      - ./back-end:/var/www/html
+      - backend_storage:/var/www/html/storage
+    networks:
+      - oncree_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      sh -c "php artisan config:cache &&
+             php artisan route:cache &&
+             php-fpm"
+
+  # Nginx for Backend
+  nginx:
+    image: nginx:alpine
+    container_name: oncree_nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ./back-end:/var/www/html
+      - ./nginx/backend.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - oncree_network
+    depends_on:
+      - backend
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frant-end
+      dockerfile: Dockerfile
+    container_name: oncree_frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api
+    ports:
+      - "3000:3000"
+    networks:
+      - oncree_network
+    depends_on:
+      - backend
+
+networks:
+  oncree_network:
+    driver: bridge
+
+volumes:
+  backend_storage:
