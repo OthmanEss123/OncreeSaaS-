@@ -2,26 +2,6 @@
 
 services:
   # Note: Using host's MySQL database instead of containerized MySQL
-   # MySQL Database
-  mysql:
-    image: mysql:8.0
-    container_name: oncree_mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: laravel
-      MYSQL_USER: laravel_user
-      MYSQL_PASSWORD: laravel_password
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    networks:
-      - oncree_network
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      timeout: 20s
-      retries: 10
   # Laravel Backend
   backend:
     build:
