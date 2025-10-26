@@ -23,7 +23,7 @@ interface ApiResponse<T> {
 
 // ----- Axios instance -----
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api',
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://31.97.197.2:8000/api',
   headers: { 'Content-Type': 'application/json' }
 })
 

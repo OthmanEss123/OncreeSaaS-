@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { RhAPI, ClientAPI, ConsultantAPI } from '@/lib/api'
 import type { Rh, Client, Consultant } from '@/lib/type'
@@ -19,17 +20,39 @@ import {
 } from 'lucide-react'
 
 export default function RHDashboard() {
+  const router = useRouter()
   const [rh, setRh] = useState<Rh | null>(null)
   const [client, setClient] = useState<Client | null>(null)
   const [consultants, setConsultants] = useState<Consultant[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Vérifier l'authentification au chargement
+  useEffect(() => {
+    const token = localStorage.getItem('authToken')
+    const userType = localStorage.getItem('userType')
+    
+    if (!token || userType !== 'rh') {
+      router.push('/login')
+      return
+    }
+    
+    // Charger les données seulement si authentifié
+    loadDashboardData()
+  }, [router])
+
   // Charger les données du dashboard RH
   const loadDashboardData = async () => {
     try {
       setLoading(true)
       setError(null)
+      
+      // Vérifier encore une fois le token avant l'appel
+      const token = localStorage.getItem('authToken')
+      if (!token) {
+        router.push('/login')
+        return
+      }
       
       // Récupérer les informations du RH connecté
       const rhData = await RhAPI.me()
@@ -58,11 +81,6 @@ export default function RHDashboard() {
       setLoading(false)
     }
   }
-
-  // Charger les données au montage du composant
-  useEffect(() => {
-    loadDashboardData()
-  }, [])
 
   // Calculer les statistiques
   const activeConsultants = consultants.filter(c => c.status === 'active').length
