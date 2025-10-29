@@ -23,7 +23,7 @@ interface ApiResponse<T> {
 
 // ----- Axios instance -----
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'https://saas.oncree.fr/api',
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'https://api.saas.oncree.fr/api',
   headers: { 'Content-Type': 'application/json' }
 })
 
