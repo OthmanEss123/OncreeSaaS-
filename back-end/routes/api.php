@@ -30,30 +30,7 @@ use App\Http\Controllers\EmailResetPasswordController;
 
 Route::post('login', [AuthController::class, 'login']);
 
-// Routes protégées par authentification (DOIT être AVANT apiResource pour éviter les conflits)
-Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
-    Route::get('/admin/me', [AuthController::class, 'me']);
-    Route::get('/client/me', [AuthController::class, 'me']);
-    Route::get('/manager/me', [AuthController::class, 'me']);
-    Route::get('/rh/me', [AuthController::class, 'me']);
-    Route::get('/comptable/me', [AuthController::class, 'me']);
-    Route::get('/consultant/me', [ConsultantController::class, 'me']);
-    Route::post('logout', [AuthController::class, 'logout']);
-    
-    // 🚀 Endpoints agrégés pour performance (1 appel au lieu de plusieurs)
-    Route::get('/consultant/dashboard-data', [ConsultantController::class, 'getDashboardData']);
-    Route::get('/admin/consultants-data', [ConsultantController::class, 'getAdminConsultantsData']);
-    
-    // Routes pour les work schedules (authentifiées) avec rate limit augmenté
-    Route::get('/my-work-schedules', [WorkScheduleController::class, 'mySchedules']);
-    Route::get('/work-logs-grouped', [WorkScheduleController::class, 'getWorkLogsGroupedByMonth']);
-    Route::apiResource('work-schedules', WorkScheduleController::class);
-    
-    // Route pour envoyer le rapport mensuel au client par email
-    Route::post('/send-monthly-report', [WorkScheduleController::class, 'sendMonthlyReportToClient']);
-});
-
-// Routes publiques (sans authentification) - APRÈS les routes protégées
+// Routes publiques (sans authentification)
 Route::apiResource('clients', ClientController::class);
 Route::apiResource('managers', ManagerController::class);
 Route::apiResource('rh', RhController::class);
@@ -76,3 +53,26 @@ Route::post('reset-password-old', [App\Http\Controllers\PasswordRecoveryControll
 Route::post('forgot-password', [EmailResetPasswordController::class, 'sendResetCode']);
 Route::post('verify-code', [EmailResetPasswordController::class, 'verifyCode']);
 Route::post('reset-password', [EmailResetPasswordController::class, 'resetPassword']);
+// Routes protégées par authentification
+Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
+    Route::get('/admin/me', [AuthController::class, 'me']);
+    Route::get('/client/me', [AuthController::class, 'me']);
+    Route::get('/manager/me', [AuthController::class, 'me']);
+    Route::get('/rh/me', [AuthController::class, 'me']);
+    Route::get('/comptable/me', [AuthController::class, 'me']);
+    Route::get('/consultant/me', [ConsultantController::class, 'me']);
+    Route::post('logout', [AuthController::class, 'logout']);
+    
+    // 🚀 Endpoints agrégés pour performance (1 appel au lieu de plusieurs)
+    Route::get('/consultant/dashboard-data', [ConsultantController::class, 'getDashboardData']);
+    Route::get('/admin/consultants-data', [ConsultantController::class, 'getAdminConsultantsData']);
+    
+    // Routes pour les work schedules (authentifiées) avec rate limit augmenté
+    Route::get('/my-work-schedules', [WorkScheduleController::class, 'mySchedules']);
+    Route::get('/work-logs-grouped', [WorkScheduleController::class, 'getWorkLogsGroupedByMonth']);
+    Route::apiResource('work-schedules', WorkScheduleController::class);
+    
+    // Route pour envoyer le rapport mensuel au client par email
+    Route::post('/send-monthly-report', [WorkScheduleController::class, 'sendMonthlyReportToClient']);
+});
+
