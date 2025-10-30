@@ -37,7 +37,7 @@ export function useConsultantAuth() {
 
         // Récupérer les informations du consultant depuis le backend
         // Note: Vous devrez peut-être créer un endpoint /consultant/me dans votre API
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/consultant/me`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://api.saas.oncree.fr/api'}/consultant/me`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'

@@ -135,7 +135,7 @@ GET|HEAD  api/rh/me ... AuthController@me
 ### Étape 11 : Tester l'endpoint
 ```bash
 # Test de login
-curl -X POST http://localhost:8000/api/login \
+curl -X POST https://api.saas.oncree.fr/api/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "rh@oncree.com",
@@ -146,7 +146,7 @@ curl -X POST http://localhost:8000/api/login \
 
 **Copiez le token retourné**, puis testez `/rh/me` :
 ```bash
-curl -X GET http://localhost:8000/api/rh/me \
+curl -X GET https://api.saas.oncree.fr/api/rh/me \
   -H "Authorization: Bearer VOTRE_TOKEN_ICI" \
   -H "Accept: application/json"
 ```
@@ -255,7 +255,7 @@ docker exec -it oncree_backend php artisan route:list | grep "rh/me"
 docker logs oncree_backend --tail=50
 
 # 8. Test rapide
-curl -X POST http://localhost:8000/api/login \
+curl -X POST https://api.saas.oncree.fr/api/login \
   -H "Content-Type: application/json" \
   -d '{"email":"rh@oncree.com","password":"password123","type":"rh"}'
 ```

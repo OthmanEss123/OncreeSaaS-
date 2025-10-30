@@ -4,7 +4,7 @@
 // Test 1: Email valide
 async function testValidEmail() {
   try {
-    const response = await fetch('http://localhost:8000/api/forgot-password', {
+    const response = await fetch('https://api.saas.oncree.fr/api/forgot-password', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -28,7 +28,7 @@ async function testValidEmail() {
 // Test 2: Email invalide
 async function testInvalidEmail() {
   try {
-    const response = await fetch('http://localhost:8000/api/forgot-password', {
+    const response = await fetch('https://api.saas.oncree.fr/api/forgot-password', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -48,7 +48,7 @@ async function testInvalidEmail() {
 // Test 3: Réinitialisation avec token
 async function testResetPassword(token) {
   try {
-    const response = await fetch('http://localhost:8000/api/reset-password', {
+    const response = await fetch('https://api.saas.oncree.fr/api/reset-password', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

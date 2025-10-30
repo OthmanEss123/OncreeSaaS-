@@ -120,9 +120,10 @@ echo "🧪 Pour tester la connexion:\n";
 echo "   1. Ouvrez: test-rh-login.html dans votre navigateur\n";
 echo "   2. Utilisez les identifiants affichés ci-dessus\n";
 echo "   3. Ou utilisez curl:\n\n";
-echo "   curl -X POST http://localhost:8000/api/login \\\n";
+echo "   curl -X POST https://api.saas.oncree.fr/api/login \\\n";
 echo "        -H 'Content-Type: application/json' \\\n";
 echo "        -d '{\"email\":\"rh@test.com\",\"password\":\"password123\"}'\n\n";
+
 
 
 

@@ -38,7 +38,7 @@ export function useAuth() {
 
         // Récupérer les informations de l'utilisateur depuis le backend selon son type
         const endpoint = userType ? `/${userType}/me` : '/client/me'
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}${endpoint}`, {
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || "https://api.saas.oncree.fr/api"}${endpoint}`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
