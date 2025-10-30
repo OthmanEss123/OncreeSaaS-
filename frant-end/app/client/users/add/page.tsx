@@ -22,7 +22,8 @@ import {
 
 // TypeScript Interfaces
 interface ConsultantFormData {
-  name: string
+  first_name: string
+  last_name: string
   email: string
   phone: string
   role: 'Consultant'
@@ -41,7 +42,8 @@ export default function AddUserPage() {
   const [success, setSuccess] = useState(false)
   
   const [formData, setFormData] = useState<ConsultantFormData>({
-    name: '',
+    first_name: '',
+    last_name: '',
     email: '',
     phone: '',
     role: 'Consultant',
@@ -92,8 +94,12 @@ export default function AddUserPage() {
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {}
     
-    if (!formData.name.trim()) {
-      newErrors.name = 'Le nom est requis'
+    if (!formData.first_name.trim()) {
+      newErrors.first_name = 'Le prénom est requis'
+    }
+    
+    if (!formData.last_name.trim()) {
+      newErrors.last_name = 'Le nom est requis'
     }
     
     if (!formData.email.trim()) {
@@ -108,15 +114,15 @@ export default function AddUserPage() {
     
     if (!formData.password.trim()) {
       newErrors.password = 'Le mot de passe est requis'
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Le mot de passe doit contenir au moins 6 caractères'
+    } else if (formData.password.length < 8) {
+      newErrors.password = 'Le mot de passe doit contenir au moins 8 caractères'
     }
     
     if (formData.daily_rate <= 0) {
       newErrors.daily_rate = 'Le tarif journalier doit être supérieur à 0'
     }
     
-    if (!formData.skills.trim()) {
+    if (!formData.skills.trim() && selectedSkills.length === 0) {
       newErrors.skills = 'Les compétences sont requises'
     }
     
@@ -226,21 +232,42 @@ export default function AddUserPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nom complet *
+                  Prénom *
                 </label>
                 <input
                   type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  value={formData.first_name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value }))}
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 ${
-                    errors.name ? 'border-red-500' : 'border-gray-300'
+                    errors.first_name ? 'border-red-500' : 'border-gray-300'
                   }`}
-                  placeholder="Ex: Marie Dubois"
+                  placeholder="Ex: Marie"
                 />
-                {errors.name && (
+                {errors.first_name && (
                   <p className="mt-1 text-sm text-red-600 flex items-center">
                     <AlertCircle className="h-4 w-4 mr-1" />
-                    {errors.name}
+                    {errors.first_name}
+                  </p>
+                )}
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Nom *
+                </label>
+                <input
+                  type="text"
+                  value={formData.last_name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value }))}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 ${
+                    errors.last_name ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                  placeholder="Ex: Dubois"
+                />
+                {errors.last_name && (
+                  <p className="mt-1 text-sm text-red-600 flex items-center">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {errors.last_name}
                   </p>
                 )}
               </div>
