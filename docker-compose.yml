@@ -56,7 +56,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://31.97.197.2:8000/api
+      NEXT_PUBLIC_API_URL: https://api.saas.oncree.fr/api
     ports:
       - "3000:3000"
     networks:
