@@ -43,8 +43,16 @@ interface ManagerStats {
 export default function ManagerDashboard() {
   const router = useRouter()
   const { user, loading: authLoading, isAuthenticated, logout } = useAuth()
-  const { consultants, loading: consultantsLoading, error: consultantsError } = useConsultants()
+  const { consultants: allConsultants, loading: consultantsLoading, error: consultantsError } = useConsultants()
   const { projects, loading: projectsLoading, error: projectsError } = useProjects()
+  
+  // State pour gérer la visibilité des sections
+  const [visibleSections, setVisibleSections] = useState({
+    consultants: true,
+    rh: false,
+    comptables: false,
+    projects: false
+  })
   
   // State for manager statistics
   const [stats, setStats] = useState<ManagerStats>({
@@ -56,6 +64,12 @@ export default function ManagerDashboard() {
     totalRh: 0,
     totalComptables: 0
   })
+
+  // Filtrer les consultants par client_id du manager
+  const consultants = React.useMemo(() => {
+    if (!user?.client_id || !allConsultants) return []
+    return allConsultants.filter(c => c.client_id === user.client_id)
+  }, [allConsultants, user?.client_id])
 
   // Calculate statistics
   useEffect(() => {
@@ -116,47 +130,71 @@ export default function ManagerDashboard() {
       : 'bg-red-100 text-red-800'
   }
 
+  // Fonction pour afficher une section et défiler vers elle
+  const showSection = (sectionKey: 'consultants' | 'rh' | 'comptables' | 'projects', sectionId: string) => {
+    // Cacher toutes les sections et afficher uniquement celle sélectionnée
+    setVisibleSections({
+      consultants: false,
+      rh: false,
+      comptables: false,
+      projects: false,
+      [sectionKey]: true
+    })
+    
+    // Attendre un peu que la section soit rendue, puis défiler
+    setTimeout(() => {
+      const element = document.getElementById(sectionId)
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }, 100)
+  }
+
   // Navigation cards data
   const navigationCards = [
     {
       title: 'Gérer les Consultants',
-      description: 'Créer, modifier et gérer les consultants',
+      description: 'Voir la liste des consultants',
       icon: Users,
       color: 'blue',
       bgColor: 'bg-blue-50',
       textColor: 'text-blue-600',
       hoverColor: 'hover:bg-blue-100',
-      path: '/manager/consultant/add'
+      sectionId: 'consultants-section',
+      sectionKey: 'consultants' as const
     },
     {
       title: 'Gérer les RH',
-      description: 'Créer et gérer les ressources humaines',
+      description: 'Voir la liste des RH',
       icon: UserCheck,
       color: 'green',
       bgColor: 'bg-green-50',
       textColor: 'text-green-600',
       hoverColor: 'hover:bg-green-100',
-      path: '/manager/rh/add'
+      sectionId: 'rh-section',
+      sectionKey: 'rh' as const
     },
     {
       title: 'Gérer les Comptables',
-      description: 'Créer et gérer les comptables',
+      description: 'Voir la liste des comptables',
       icon: Calculator,
       color: 'purple',
       bgColor: 'bg-purple-50',
       textColor: 'text-purple-600',
       hoverColor: 'hover:bg-purple-100',
-      path: '/manager/comptable/add'
+      sectionId: 'comptables-section',
+      sectionKey: 'comptables' as const
     },
     {
       title: 'Voir les Projets',
-      description: 'Consulter et gérer les projets',
+      description: 'Consulter la liste des projets',
       icon: Briefcase,
       color: 'indigo',
       bgColor: 'bg-indigo-50',
       textColor: 'text-indigo-600',
       hoverColor: 'hover:bg-indigo-100',
-      path: '/client/projects'
+      sectionId: 'projects-section',
+      sectionKey: 'projects' as const
     }
   ]
 
@@ -290,7 +328,7 @@ export default function ManagerDashboard() {
                 transition={{ duration: 0.3, delay: index * 0.1 }}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={() => router.push(card.path)}
+                onClick={() => showSection(card.sectionKey, card.sectionId)}
               >
                 <div className="flex items-center mb-4">
                   <card.icon className={`h-8 w-8 ${card.textColor}`} />
@@ -307,7 +345,8 @@ export default function ManagerDashboard() {
         </div>
 
         {/* Consultants Table */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        {visibleSections.consultants && (
+        <div id="consultants-section" className="bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-6">
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-gray-900">
@@ -436,80 +475,74 @@ export default function ManagerDashboard() {
             </table>
           </div>
         </div>
+        )}
 
-        {/* Quick Actions Footer */}
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <motion.div 
-            className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 text-center"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.4 }}
-          >
-            <UserPlus className="h-8 w-8 text-green-600 mx-auto mb-3" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Ajouter un Utilisateur</h3>
-            <p className="text-gray-600 text-sm mb-4">
-              Créez rapidement de nouveaux utilisateurs pour votre équipe
-            </p>
-            <div className="space-y-2">
-              <button
-                onClick={() => router.push('/manager/consultant/add')}
-                className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
-              >
-                Ajouter Consultant
-              </button>
-              <button
+        {/* Placeholder sections pour RH, Comptables, Projets */}
+        {visibleSections.rh && (
+        <div id="rh-section" className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-6">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-gray-900">Liste des RH</h2>
+              <motion.button
                 onClick={() => router.push('/manager/rh/add')}
-                className="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm"
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
               >
-                Ajouter RH
-              </button>
-              <button
-                onClick={() => router.push('/manager/comptable/add')}
-                className="w-full bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors text-sm"
-              >
-                Ajouter Comptable
-              </button>
+                <Plus className="h-4 w-4" />
+                <span>Ajouter RH</span>
+              </motion.button>
             </div>
-          </motion.div>
-
-          <motion.div 
-            className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 text-center"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.5 }}
-          >
-            <BarChart3 className="h-8 w-8 text-indigo-600 mx-auto mb-3" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Rapports</h3>
-            <p className="text-gray-600 text-sm mb-4">
-              Consultez les rapports et statistiques de votre équipe
-            </p>
-            <button
-              onClick={() => router.push('/client/dashboard')}
-              className="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors text-sm"
-            >
-              Voir les Rapports
-            </button>
-          </motion.div>
-
-          <motion.div 
-            className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 text-center"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.6 }}
-          >
-            <Settings className="h-8 w-8 text-gray-600 mx-auto mb-3" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Paramètres</h3>
-            <p className="text-gray-600 text-sm mb-4">
-              Gérez les paramètres de votre compte et de votre organisation
-            </p>
-            <button
-              onClick={() => router.push('/client/dashboard')}
-              className="w-full bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors text-sm"
-            >
-              Ouvrir Paramètres
-            </button>
-          </motion.div>
+          </div>
+          <div className="p-6">
+            <p className="text-gray-500 text-center py-8">Section en cours de développement</p>
+          </div>
         </div>
+        )}
+
+        {visibleSections.comptables && (
+        <div id="comptables-section" className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-6">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-gray-900">Liste des Comptables</h2>
+              <motion.button
+                onClick={() => router.push('/manager/comptable/add')}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <Plus className="h-4 w-4" />
+                <span>Ajouter Comptable</span>
+              </motion.button>
+            </div>
+          </div>
+          <div className="p-6">
+            <p className="text-gray-500 text-center py-8">Section en cours de développement</p>
+          </div>
+        </div>
+        )}
+
+        {visibleSections.projects && (
+        <div id="projects-section" className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-6">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-gray-900">Liste des Projets</h2>
+              <motion.button
+                onClick={() => router.push('/client/projects/add')}
+                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center space-x-2"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <Plus className="h-4 w-4" />
+                <span>Ajouter Projet</span>
+              </motion.button>
+            </div>
+          </div>
+          <div className="p-6">
+            <p className="text-gray-500 text-center py-8">Section en cours de développement</p>
+          </div>
+        </div>
+        )}
       </main>
     </div>
   )

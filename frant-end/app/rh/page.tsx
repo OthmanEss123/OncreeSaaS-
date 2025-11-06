@@ -21,23 +21,15 @@ import {
 
 export default function RHDashboard() {
   const router = useRouter()
+  // État pour les données du backend
   const [rh, setRh] = useState<Rh | null>(null)
   const [client, setClient] = useState<Client | null>(null)
   const [consultants, setConsultants] = useState<Consultant[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Vérifier l'authentification au chargement
+  // Charger les données au chargement
   useEffect(() => {
-    const token = localStorage.getItem('authToken')
-    const userType = localStorage.getItem('userType')
-    
-    if (!token || userType !== 'rh') {
-      router.push('/login')
-      return
-    }
-    
-    // Charger les données seulement si authentifié
     loadDashboardData()
   }, [router])
 
@@ -46,13 +38,6 @@ export default function RHDashboard() {
     try {
       setLoading(true)
       setError(null)
-      
-      // Vérifier encore une fois le token avant l'appel
-      const token = localStorage.getItem('authToken')
-      if (!token) {
-        router.push('/login')
-        return
-      }
       
       // Récupérer les informations du RH connecté
       const rhData = await RhAPI.me()
@@ -74,9 +59,9 @@ export default function RHDashboard() {
       )
       setConsultants(filteredConsultants)
       
-    } catch (error) {
-      console.error('Erreur lors du chargement:', error)
-      setError('Impossible de charger les données du dashboard')
+    } catch (error: any) {
+      console.error('❌ Erreur lors du chargement:', error)
+      setError(error.response?.data?.message || error.message || 'Erreur lors du chargement des données')
     } finally {
       setLoading(false)
     }
@@ -263,7 +248,7 @@ export default function RHDashboard() {
                             <div className="flex items-center">
                               <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center mr-3">
                                 <span className="text-primary font-medium text-sm">
-                                  {consultant.first_name[0]}{consultant.last_name[0]}
+                                  {consultant.first_name?.[0] || ''}{consultant.last_name?.[0] || ''}
                                 </span>
                               </div>
                               <div>

@@ -1,7 +1,6 @@
 import { SharedLayout } from "@/components/shared-layout"
 import { Button } from "@/components/ui/button"
 import { Users, Target, Heart, Zap, ArrowRight } from "lucide-react"
-
 export default function About() {
   return (
     <SharedLayout>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ClientAPI } from '@/lib/api'
+import { ClientAPI, clearAllCache } from '@/lib/api'
 import type { Client } from '@/lib/type'
 import axios from 'axios'
 
@@ -66,6 +66,7 @@ export function useAuth() {
   const logout = () => {
     localStorage.removeItem('authToken')
     localStorage.removeItem('userType')
+    clearAllCache() // Vider le cache pour éviter que les données d'un consultant soient visibles par un autre
     setAuthState({
       user: null,
       loading: false,

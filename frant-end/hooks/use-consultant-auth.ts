@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ConsultantAPI } from '@/lib/api'
+import { ConsultantAPI, clearAllCache } from '@/lib/api'
 import type { Consultant } from '@/lib/type'
 
 interface ConsultantAuthState {
@@ -72,6 +72,7 @@ export function useConsultantAuth() {
   const logout = () => {
     localStorage.removeItem('authToken')
     localStorage.removeItem('userType')
+    clearAllCache() // Vider le cache pour éviter que les données d'un consultant soient visibles par un autre
     setAuthState({
       user: null,
       loading: false,

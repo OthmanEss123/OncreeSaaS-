@@ -43,13 +43,11 @@ export function Navbar() {
           {/* Desktop Buttons */}
           <div className="hidden md:flex items-center space-x-4">
             <Link href="/login">
-              <Button variant="ghost" className="text-foreground hover:text-primary">
+              <Button variant="ghost" className="text-foreground ">
                 Login
               </Button>
             </Link>
-            <Link href="/signup">
-              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">Register</Button>
-            </Link>
+            
           </div>
 
           {/* Mobile menu button */}
@@ -101,15 +99,11 @@ export function Navbar() {
               </Link>
               <div className="flex flex-col space-y-2 px-3 pt-2">
                 <Link href="/login">
-                  <Button variant="ghost" className="justify-start text-card-foreground hover:text-primary w-full">
+                  <Button variant="ghost" className="justify-start text-card-foreground  w-full">
                     Login
                   </Button>
                 </Link>
-                <Link href="/signup">
-                  <Button className="justify-start bg-primary hover:bg-primary/90 text-primary-foreground w-full">
-                    Register
-                  </Button>
-                </Link>
+                
               </div>
             </div>
           </div>

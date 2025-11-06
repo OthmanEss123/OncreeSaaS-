@@ -30,21 +30,6 @@ use App\Http\Controllers\EmailResetPasswordController;
 
 Route::post('login', [AuthController::class, 'login']);
 
-// Routes publiques (sans authentification)
-Route::apiResource('clients', ClientController::class);
-Route::apiResource('managers', ManagerController::class);
-Route::apiResource('rh', RhController::class);
-Route::apiResource('comptables', ComptableController::class);
-Route::apiResource('projects', ProjectController::class);
-Route::apiResource('assignments', AssignmentController::class);
-Route::apiResource('quotes', QuoteController::class);
-Route::apiResource('factures', FactureController::class);
-Route::apiResource('consultants', ConsultantController::class);
-
-// Routes publiques pour les types
-Route::get('work-types', [WorkTypeController::class, 'index']);
-Route::get('leave-types', [LeaveTypeController::class, 'index']);
-
 // Routes de récupération de mot de passe (ancien système - gardé pour compatibilité)
 Route::post('forgot-password-old', [App\Http\Controllers\PasswordRecoveryController::class, 'forgotPassword']);
 Route::post('reset-password-old', [App\Http\Controllers\PasswordRecoveryController::class, 'resetPassword']);
@@ -53,7 +38,12 @@ Route::post('reset-password-old', [App\Http\Controllers\PasswordRecoveryControll
 Route::post('forgot-password', [EmailResetPasswordController::class, 'sendResetCode']);
 Route::post('verify-code', [EmailResetPasswordController::class, 'verifyCode']);
 Route::post('reset-password', [EmailResetPasswordController::class, 'resetPassword']);
-// Routes protégées par authentification
+
+// Routes publiques pour les types
+Route::get('work-types', [WorkTypeController::class, 'index']);
+Route::get('leave-types', [LeaveTypeController::class, 'index']);
+
+// Routes protégées par authentification (AVANT les routes resource pour éviter les conflits)
 Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::get('/admin/me', [AuthController::class, 'me']);
     Route::get('/client/me', [AuthController::class, 'me']);
@@ -75,4 +65,15 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     // Route pour envoyer le rapport mensuel au client par email
     Route::post('/send-monthly-report', [WorkScheduleController::class, 'sendMonthlyReportToClient']);
 });
+
+// Routes publiques (sans authentification) - APRÈS les routes protégées pour éviter les conflits
+Route::apiResource('clients', ClientController::class);
+Route::apiResource('managers', ManagerController::class);
+Route::apiResource('rh', RhController::class);
+Route::apiResource('comptables', ComptableController::class);
+Route::apiResource('projects', ProjectController::class);
+Route::apiResource('assignments', AssignmentController::class);
+Route::apiResource('quotes', QuoteController::class);
+Route::apiResource('factures', FactureController::class);
+Route::apiResource('consultants', ConsultantController::class);
 

@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
 import axios from "axios"
+import { clearAllCache } from "@/lib/api"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -30,6 +31,9 @@ export default function LoginPage() {
         `${process.env.NEXT_PUBLIC_API_URL || "https://api.saas.oncree.fr/api"}/login`,
         { email, password }
       )
+
+      // 🗑️ Vider le cache avant de stocker le nouveau token pour éviter les données d'un ancien utilisateur
+      clearAllCache()
 
       // ⚡ Stocker le token (exemple simple : localStorage)
       localStorage.setItem("authToken", data.token)

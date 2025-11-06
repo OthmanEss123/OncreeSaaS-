@@ -47,6 +47,7 @@ services:
     depends_on:
       - backend
 
+
   # Next.js Frontend
   frontend:
     build:

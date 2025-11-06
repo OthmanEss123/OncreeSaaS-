@@ -16,28 +16,21 @@ import {
   Briefcase,
   Calendar,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  UserPlus
 } from 'lucide-react'
 
 export default function RHDashboard() {
   const router = useRouter()
+  // État pour les données du backend
   const [rh, setRh] = useState<Rh | null>(null)
   const [client, setClient] = useState<Client | null>(null)
   const [consultants, setConsultants] = useState<Consultant[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Vérifier l'authentification au chargement
+  // Charger les données au chargement
   useEffect(() => {
-    const token = localStorage.getItem('authToken')
-    const userType = localStorage.getItem('userType')
-    
-    if (!token || userType !== 'rh') {
-      router.push('/login')
-      return
-    }
-    
-    // Charger les données seulement si authentifié
     loadDashboardData()
   }, [router])
 
@@ -47,9 +40,12 @@ export default function RHDashboard() {
       setLoading(true)
       setError(null)
       
-      // Vérifier encore une fois le token avant l'appel
+      // Vérifier que l'utilisateur est connecté
       const token = localStorage.getItem('authToken')
-      if (!token) {
+      const userType = localStorage.getItem('userType')
+      
+      if (!token || userType !== 'rh') {
+        setError('Vous devez être connecté en tant que RH')
         router.push('/login')
         return
       }
@@ -74,9 +70,9 @@ export default function RHDashboard() {
       )
       setConsultants(filteredConsultants)
       
-    } catch (error) {
-      console.error('Erreur lors du chargement:', error)
-      setError('Impossible de charger les données du dashboard')
+    } catch (error: any) {
+      console.error('❌ Erreur lors du chargement:', error)
+      setError(error.response?.data?.message || error.message || 'Erreur lors du chargement des données')
     } finally {
       setLoading(false)
     }
@@ -228,10 +224,21 @@ export default function RHDashboard() {
               transition={{ duration: 0.3, delay: 0.4 }}
             >
               <div className="px-6 py-4 border-b border-border">
-                <h2 className="text-lg font-semibold text-card-foreground flex items-center">
-                  <Users className="h-5 w-5 text-primary mr-2" />
-                  Liste des Consultants
-                </h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-card-foreground flex items-center">
+                    <Users className="h-5 w-5 text-primary mr-2" />
+                    Liste des Consultants
+                  </h2>
+                  <motion.button
+                    onClick={() => router.push('/rh/consultants/add')}
+                    className="flex items-center space-x-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    <span>Ajouter un consultant</span>
+                  </motion.button>
+                </div>
               </div>
               
               <div className="overflow-x-auto">
@@ -263,7 +270,7 @@ export default function RHDashboard() {
                             <div className="flex items-center">
                               <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center mr-3">
                                 <span className="text-primary font-medium text-sm">
-                                  {consultant.first_name[0]}{consultant.last_name[0]}
+                                  {consultant.first_name?.[0] || ''}{consultant.last_name?.[0] || ''}
                                 </span>
                               </div>
                               <div>

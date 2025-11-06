@@ -243,7 +243,8 @@ export default function UserDashboard() {
       
       // Appel API direct sans cache complexe
       const token = localStorage.getItem('authToken')
-      const response = await fetch('https://api.saas.oncree.fr/api/work-logs-grouped', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.saas.oncree.fr/api'
+      const response = await fetch(`${apiUrl}/work-logs-grouped`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -327,7 +328,8 @@ export default function UserDashboard() {
 
     try {
       const token = localStorage.getItem('authToken');
-      const response = await fetch('https://api.saas.oncree.fr/api/send-monthly-report', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.saas.oncree.fr/api';
+      const response = await fetch(`${apiUrl}/send-monthly-report`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
