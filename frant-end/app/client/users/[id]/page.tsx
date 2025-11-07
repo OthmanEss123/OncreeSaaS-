@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
 import { 
@@ -18,8 +18,11 @@ import {
   AlertTriangle,
   CheckCircle,
   Star,
-  TrendingUp
+  TrendingUp,
+  Loader2
 } from 'lucide-react'
+import { ConsultantAPI, invalidateCache } from '@/lib/api'
+import type { Consultant, WorkSchedule, Project as ProjectType } from '@/lib/type'
 
 // TypeScript Interfaces
 interface User {
@@ -53,65 +56,189 @@ interface Project {
   endDate?: string
 }
 
-// Mock data - In real app, this would come from API
-const mockUser: User = {
-  id: '1',
-  firstName: 'Marie',
-  lastName: 'Dubois',
-  email: 'marie.dubois@email.com',
-  phone: '+33 6 12 34 56 78',
-  role: 'Designer',
-  dailyRate: 450,
-  skills: ['UI/UX Design', 'Figma', 'Adobe XD', 'Photoshop', 'React'],
-  experience: 5,
-  location: 'Paris, France',
-  availability: 'Available',
-  startDate: '2023-06-01',
-  notes: 'Spécialisée dans le design d\'interfaces modernes et l\'expérience utilisateur. Très créative et à l\'écoute des besoins clients.',
-  currentProject: 'E-commerce Redesign',
-  totalHours: 1200,
-  totalEarnings: 54000,
-  rating: 4.8
+// Helper function to transform backend consultant data to frontend User format
+const transformConsultantToUser = (consultant: Consultant, workSchedules: WorkSchedule[] = []): User => {
+  // Parse skills (stored as string in backend, can be comma-separated or JSON)
+  let skillsArray: string[] = []
+  if (consultant.skills) {
+    try {
+      // Try to parse as JSON first
+      const parsed = JSON.parse(consultant.skills)
+      skillsArray = Array.isArray(parsed) ? parsed : [consultant.skills]
+    } catch {
+      // If not JSON, split by comma
+      skillsArray = consultant.skills.split(',').map(s => s.trim()).filter(s => s.length > 0)
+    }
+  }
+
+  // Calculate total hours from work schedules (days_worked * 8 hours per day)
+  const totalHours = workSchedules.reduce((sum, schedule) => sum + (schedule.days_worked || 0) * 8, 0)
+
+  // Calculate total earnings from work schedules
+  const dailyRate = consultant.daily_rate || 0
+  const totalEarnings = workSchedules.reduce((sum, schedule) => {
+    const daysCost = (schedule.days_worked || 0) * dailyRate
+    // Add any additional expenses from notes (travel expenses, etc.)
+    let expenses = 0
+    if (schedule.notes) {
+      try {
+        const notes = typeof schedule.notes === 'string' ? JSON.parse(schedule.notes) : schedule.notes
+        if (notes.travelExpenses) {
+          if (Array.isArray(notes.travelExpenses)) {
+            expenses = notes.travelExpenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0)
+          } else {
+            expenses = parseFloat(notes.travelExpenses) || 0
+          }
+        }
+      } catch {
+        // Ignore parsing errors
+      }
+    }
+    return sum + daysCost + expenses
+  }, 0)
+
+  // Determine availability based on status
+  const availability: 'Available' | 'Busy' | 'Unavailable' = 
+    consultant.status === 'active' ? 'Available' : 
+    consultant.status === 'inactive' ? 'Unavailable' : 'Busy'
+
+  // Calculate experience from created_at date
+  const startDate = consultant.created_at || new Date().toISOString()
+
+  return {
+    id: consultant.id.toString(),
+    firstName: consultant.first_name || '',
+    lastName: consultant.last_name || '',
+    email: consultant.email || '',
+    phone: consultant.phone || 'Non renseigné',
+    role: consultant.role || 'Consultant',
+    dailyRate: dailyRate,
+    skills: skillsArray,
+    experience: 0, // Will be calculated from startDate
+    location: consultant.address || 'Non renseigné',
+    availability,
+    startDate,
+    notes: '', // Can be added later if needed in backend
+    currentProject: consultant.project?.name || undefined,
+    totalHours: Math.round(totalHours),
+    totalEarnings: Math.round(totalEarnings),
+    rating: 0 // Can be calculated from ratings if available
+  }
 }
 
-const mockProjects: Project[] = [
-  {
-    id: '1',
-    name: 'E-commerce Redesign',
-    status: 'Active',
-    hoursWorked: 120,
-    cost: 5400,
-    startDate: '2024-01-15',
-    endDate: '2024-03-15'
-  },
-  {
-    id: '2',
-    name: 'Mobile App UI',
-    status: 'Completed',
-    hoursWorked: 80,
-    cost: 3600,
-    startDate: '2023-11-01',
-    endDate: '2023-12-15'
-  },
-  {
-    id: '3',
-    name: 'Brand Identity',
-    status: 'Completed',
-    hoursWorked: 60,
-    cost: 2700,
-    startDate: '2023-09-01',
-    endDate: '2023-10-15'
+// Helper function to transform projects
+const transformProjects = (consultant: Consultant): Project[] => {
+  const projects: Project[] = []
+  
+  // Add current project if exists
+  if (consultant.project) {
+    const workSchedules = consultant.workSchedules || []
+    const projectSchedules = workSchedules.filter((ws: WorkSchedule) => 
+      consultant.project_id && ws.consultant_id === consultant.id
+    )
+    const hoursWorked = projectSchedules.reduce((sum: number, ws: WorkSchedule) => sum + (ws.days_worked || 0) * 8, 0)
+    const dailyRate = consultant.daily_rate || 0
+    const cost = projectSchedules.reduce((sum: number, ws: WorkSchedule) => {
+      const daysCost = (ws.days_worked || 0) * dailyRate
+      let expenses = 0
+      if (ws.notes) {
+        try {
+          const notes = typeof ws.notes === 'string' ? JSON.parse(ws.notes) : ws.notes
+          if (notes.travelExpenses) {
+            if (Array.isArray(notes.travelExpenses)) {
+              expenses = notes.travelExpenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0)
+            } else {
+              expenses = parseFloat(notes.travelExpenses) || 0
+            }
+          }
+        } catch {}
+      }
+      return sum + daysCost + expenses
+    }, 0)
+
+    const status = consultant.project.end_date 
+      ? (new Date(consultant.project.end_date) < new Date() ? 'Completed' : 'Active')
+      : 'Active'
+
+    projects.push({
+      id: consultant.project.id.toString(),
+      name: consultant.project.name,
+      status,
+      hoursWorked: Math.round(hoursWorked),
+      cost: Math.round(cost),
+      startDate: consultant.project.start_date || consultant.project.created_at || '',
+      endDate: consultant.project.end_date || undefined
+    })
   }
-]
+
+  // Add assignments (historical projects)
+  if (consultant.assignments) {
+    consultant.assignments.forEach((assignment: any) => {
+      if (assignment.project && assignment.project.id !== consultant.project_id) {
+        const status = assignment.end_date
+          ? (new Date(assignment.end_date) < new Date() ? 'Completed' : 'Active')
+          : 'Active'
+        
+        projects.push({
+          id: assignment.project.id.toString(),
+          name: assignment.project.name,
+          status,
+          hoursWorked: 0, // Could be calculated from work schedules filtered by date range
+          cost: 0,
+          startDate: assignment.start_date || '',
+          endDate: assignment.end_date || undefined
+        })
+      }
+    })
+  }
+
+  return projects
+}
 
 export default function UserDetailsPage() {
   const router = useRouter()
   const params = useParams()
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [projects, setProjects] = useState<Project[]>([])
 
-  // In real app, fetch user data based on params.id
-  const user = mockUser
+  // Fetch consultant data from API
+  useEffect(() => {
+    const fetchConsultantData = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
+        
+        const consultantId = parseInt(params.id as string)
+        if (isNaN(consultantId)) {
+          throw new Error('ID de consultant invalide')
+        }
+
+        const consultant = await ConsultantAPI.get(consultantId)
+        
+        // Transform consultant data to User format
+        const workSchedules = consultant.workSchedules || []
+        const transformedUser = transformConsultantToUser(consultant, workSchedules)
+        setUser(transformedUser)
+        
+        // Transform projects
+        const transformedProjects = transformProjects(consultant)
+        setProjects(transformedProjects)
+      } catch (err: any) {
+        console.error('Erreur lors du chargement du consultant:', err)
+        setError(err.response?.data?.message || err.message || 'Erreur lors du chargement des données')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    if (params.id) {
+      fetchConsultantData()
+    }
+  }, [params.id])
 
   // Helper functions
   const getAvailabilityBadgeColor = (availability: string) => {
@@ -134,36 +261,72 @@ export default function UserDetailsPage() {
 
   // Action handlers
   const handleEditUser = () => {
-    router.push(`/client/users/${user.id}/edit`)
+    if (user) {
+      router.push(`/client/users/${user.id}/edit`)
+    }
   }
 
   const handleDeleteUser = async () => {
-    setIsLoading(true)
+    if (!user) return
+    
+    setIsDeleting(true)
     try {
-      // TODO: API call to delete user
-      // await fetch(`/api/users/${user.id}`, { method: 'DELETE' })
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const consultantId = parseInt(user.id)
+      await ConsultantAPI.delete(consultantId)
+      invalidateCache('/consultants')
       setShowDeleteModal(false)
       router.push('/client/dashboard')
-    } catch (error) {
-      console.error('Error deleting user:', error)
+    } catch (error: any) {
+      console.error('Error deleting consultant:', error)
+      setError(error.response?.data?.message || 'Erreur lors de la suppression')
     } finally {
-      setIsLoading(false)
+      setIsDeleting(false)
     }
   }
 
   // Calculate experience in years and months
-  const calculateExperience = () => {
-    const startDate = new Date(user.startDate)
+  const calculateExperience = (startDate: string) => {
+    const start = new Date(startDate)
     const now = new Date()
-    const diffTime = Math.abs(now.getTime() - startDate.getTime())
+    const diffTime = Math.abs(now.getTime() - start.getTime())
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
     const years = Math.floor(diffDays / 365)
     const months = Math.floor((diffDays % 365) / 30)
     return { years, months }
   }
 
-  const experience = calculateExperience()
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-red-600 mx-auto mb-4" />
+          <p className="text-gray-600">Chargement des données...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state
+  if (error || !user) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-4">
+          <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Erreur</h2>
+          <p className="text-gray-600 mb-6">{error || 'Consultant introuvable'}</p>
+          <button
+            onClick={() => router.back()}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Retour
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const experience = calculateExperience(user.startDate)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -373,13 +536,15 @@ export default function UserDetailsPage() {
                   <span className="text-gray-600">Projet actuel</span>
                   <span className="font-medium text-gray-900">{user.currentProject || 'Aucun'}</span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Note moyenne</span>
-                  <div className="flex items-center space-x-1">
-                    <Star className="h-4 w-4 text-yellow-400 fill-current" />
-                    <span className="font-medium text-gray-900">{user.rating}</span>
+                {user.rating > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Note moyenne</span>
+                    <div className="flex items-center space-x-1">
+                      <Star className="h-4 w-4 text-yellow-400 fill-current" />
+                      <span className="font-medium text-gray-900">{user.rating}</span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </motion.div>
 
@@ -396,7 +561,10 @@ export default function UserDetailsPage() {
               </h2>
               
               <div className="space-y-4">
-                {mockProjects.map((project) => (
+                {projects.length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-4">Aucun projet assigné</p>
+                ) : (
+                  projects.map((project) => (
                   <div key={project.id} className="border border-gray-200 rounded-lg p-4">
                     <div className="flex justify-between items-start mb-2">
                       <h3 className="font-medium text-gray-900">{project.name}</h3>
@@ -420,7 +588,8 @@ export default function UserDetailsPage() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </motion.div>
           </div>
@@ -452,10 +621,10 @@ export default function UserDetailsPage() {
               </button>
               <button
                 onClick={handleDeleteUser}
-                disabled={isLoading}
+                disabled={isDeleting}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
               >
-                {isLoading ? 'Suppression...' : 'Supprimer'}
+                {isDeleting ? 'Suppression...' : 'Supprimer'}
               </button>
             </div>
           </motion.div>

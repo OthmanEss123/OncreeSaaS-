@@ -1,8 +1,11 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
+import { useAuth } from '@/hooks/use-auth'
+import { ProjectAPI, ConsultantAPI, invalidateCache } from '@/lib/api'
+import type { Project as ProjectType, Consultant } from '@/lib/type'
 import { 
   ArrowLeft, 
   Save, 
@@ -10,58 +13,119 @@ import {
   Users, 
   Euro, 
   FileText,
-  AlertCircle
+  AlertCircle,
+  Loader2,
+  AlertTriangle
 } from 'lucide-react'
 
 // TypeScript Interfaces
 interface ProjectFormData {
   name: string
   description: string
-  status: 'Active' | 'Completed' | 'On Hold' | 'Planning'
-  priority: 'Low' | 'Medium' | 'High'
   startDate: string
   endDate: string
-  budget: number
-  selectedConsultants: string[]
-  clientNotes: string
+  selectedConsultants: number[]
 }
 
-interface Consultant {
-  id: string
+interface ConsultantInfo {
+  id: number
   name: string
   role: string
   dailyRate: number
   available: boolean
 }
 
-// Mock data
-const availableConsultants: Consultant[] = [
-  { id: '1', name: 'Marie Dubois', role: 'Designer', dailyRate: 450, available: true },
-  { id: '2', name: 'Jean Martin', role: 'Developer', dailyRate: 550, available: true },
-  { id: '3', name: 'Sophie Laurent', role: 'Manager', dailyRate: 600, available: false },
-  { id: '4', name: 'Pierre Moreau', role: 'Analyst', dailyRate: 400, available: true },
-  { id: '5', name: 'Claire Bernard', role: 'Designer', dailyRate: 420, available: true },
-  { id: '6', name: 'Thomas Petit', role: 'Developer', dailyRate: 500, available: true }
-]
-
 export default function EditProjectPage() {
   const router = useRouter()
   const params = useParams()
+  const { user, loading: authLoading, isAuthenticated } = useAuth()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [consultants, setConsultants] = useState<ConsultantInfo[]>([])
+  const [loadingConsultants, setLoadingConsultants] = useState(true)
   
-  // In real app, fetch project data based on params.id
   const [formData, setFormData] = useState<ProjectFormData>({
-    name: 'E-commerce Redesign',
-    description: 'Refonte complète de la plateforme e-commerce avec nouvelle interface utilisateur, optimisation des performances et intégration de nouvelles fonctionnalités de paiement.',
-    status: 'Active',
-    priority: 'High',
-    startDate: '2024-01-15',
-    endDate: '2024-03-15',
-    budget: 50000,
-    selectedConsultants: ['1', '2'],
-    clientNotes: 'Le client souhaite une interface moderne et intuitive, avec une attention particulière à l\'expérience mobile.'
+    name: '',
+    description: '',
+    startDate: '',
+    endDate: '',
+    selectedConsultants: []
   })
+
+  // Load project data from API
+  useEffect(() => {
+    const fetchProjectData = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
+        
+        const projectId = parseInt(params.id as string)
+        if (isNaN(projectId)) {
+          throw new Error('ID de projet invalide')
+        }
+
+        const project = await ProjectAPI.get(projectId)
+        
+        // Transform backend data to form format
+        setFormData({
+          name: project.name || '',
+          description: project.description || '',
+          startDate: project.start_date ? new Date(project.start_date).toISOString().split('T')[0] : '',
+          endDate: project.end_date ? new Date(project.end_date).toISOString().split('T')[0] : '',
+          selectedConsultants: project.consultants?.map(c => c.id) || []
+        })
+      } catch (err: any) {
+        console.error('Erreur lors du chargement du projet:', err)
+        setError(err.response?.data?.message || err.message || 'Erreur lors du chargement des données')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    if (params.id) {
+      fetchProjectData()
+    }
+  }, [params.id])
+
+  // Load available consultants
+  useEffect(() => {
+    const fetchConsultants = async () => {
+      if (user?.id) {
+        try {
+          setLoadingConsultants(true)
+          const response = await ConsultantAPI.all()
+          const allConsultants: Consultant[] = Array.isArray(response) ? response : []
+          
+          // Filter consultants by client_id and transform to ConsultantInfo
+          const clientConsultants = allConsultants
+            .filter((c: Consultant) => Number(c.client_id) === Number(user.id))
+            .map((c: Consultant): ConsultantInfo => ({
+              id: c.id,
+              name: c.name || `${c.first_name} ${c.last_name}`,
+              role: c.role || 'Consultant',
+              dailyRate: c.daily_rate || 0,
+              available: c.status === 'active'
+            }))
+          
+          setConsultants(clientConsultants)
+        } catch (error) {
+          console.error('Erreur lors du chargement des consultants:', error)
+        } finally {
+          setLoadingConsultants(false)
+        }
+      }
+    }
+    fetchConsultants()
+  }, [user])
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push('/login')
+    }
+  }, [authLoading, isAuthenticated, router])
 
   // Validation function
   const validateForm = (): boolean => {
@@ -71,29 +135,16 @@ export default function EditProjectPage() {
       newErrors.name = 'Le nom du projet est requis'
     }
     
-    if (!formData.description.trim()) {
-      newErrors.description = 'La description est requise'
-    }
-    
-    if (!formData.startDate) {
-      newErrors.startDate = 'La date de début est requise'
-    }
-    
-    if (!formData.endDate) {
-      newErrors.endDate = 'La date de fin est requise'
+    if (!formData.startDate && formData.endDate) {
+      newErrors.startDate = 'La date de début est requise si une date de fin est définie'
     }
     
     if (formData.startDate && formData.endDate && new Date(formData.startDate) >= new Date(formData.endDate)) {
       newErrors.endDate = 'La date de fin doit être après la date de début'
     }
     
-    if (formData.budget <= 0) {
-      newErrors.budget = 'Le budget doit être supérieur à 0'
-    }
-    
-    if (formData.selectedConsultants.length === 0) {
-      newErrors.consultants = 'Au moins un consultant doit être sélectionné'
-    }
+    // Note: Consultants selection is optional in backend
+    // Budget, status, priority are not stored in backend, so we don't validate them
     
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -108,30 +159,42 @@ export default function EditProjectPage() {
     }
     
     setIsSubmitting(true)
+    setError(null)
+    setErrors({})
     
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/projects/${params.id}`, {
-      //   method: 'PUT',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(formData)
-      // })
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const projectId = parseInt(params.id as string)
+      if (isNaN(projectId)) {
+        throw new Error('ID de projet invalide')
+      }
+
+      // Transform form data to backend format
+      const updateData: any = {
+        name: formData.name,
+        description: formData.description || null,
+        start_date: formData.startDate || null,
+        end_date: formData.endDate || null,
+        consultants: formData.selectedConsultants // Backend expects array of consultant IDs (not Consultant objects)
+      }
+
+      await ProjectAPI.update(projectId, updateData)
+      invalidateCache(`/projects/${projectId}`)
+      invalidateCache('/projects')
       
       // Redirect to project details after successful update
       router.push(`/client/projects/${params.id}`)
-    } catch (error) {
-      console.error('Error updating project:', error)
-      setErrors({ submit: 'Erreur lors de la mise à jour du projet' })
+    } catch (err: any) {
+      console.error('Error updating project:', err)
+      const errorMessage = err.response?.data?.message || err.message || 'Erreur lors de la mise à jour du projet'
+      setError(errorMessage)
+      setErrors({ submit: errorMessage })
     } finally {
       setIsSubmitting(false)
     }
   }
 
   // Handle consultant selection
-  const toggleConsultant = (consultantId: string) => {
+  const toggleConsultant = (consultantId: number) => {
     setFormData(prev => ({
       ...prev,
       selectedConsultants: prev.selectedConsultants.includes(consultantId)
@@ -142,7 +205,7 @@ export default function EditProjectPage() {
 
   // Calculate estimated cost
   const calculateEstimatedCost = () => {
-    const selectedConsultantsData = availableConsultants.filter(c => 
+    const selectedConsultantsData = consultants.filter(c => 
       formData.selectedConsultants.includes(c.id)
     )
     
@@ -154,6 +217,42 @@ export default function EditProjectPage() {
     
     const totalDailyRate = selectedConsultantsData.reduce((sum, c) => sum + c.dailyRate, 0)
     return totalDailyRate * daysDiff
+  }
+
+  // Show loading state
+  if (authLoading || isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-red-600 mx-auto mb-4" />
+          <p className="text-gray-600">Chargement des données...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state
+  if (error && !formData.name) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-4">
+          <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Erreur</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => router.back()}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Retour
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // If not authenticated, don't render
+  if (!authLoading && !isAuthenticated) {
+    return null
   }
 
   return (
@@ -216,63 +315,11 @@ export default function EditProjectPage() {
                 )}
               </div>
               
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Statut
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as any }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                >
-                  <option value="Planning">En Planification</option>
-                  <option value="Active">Actif</option>
-                  <option value="On Hold">En Attente</option>
-                  <option value="Completed">Terminé</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Priorité
-                </label>
-                <select
-                  value={formData.priority}
-                  onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as any }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                >
-                  <option value="Low">Faible</option>
-                  <option value="Medium">Moyenne</option>
-                  <option value="High">Élevée</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Budget (€) *
-                </label>
-                <input
-                  type="number"
-                  value={formData.budget}
-                  onChange={(e) => setFormData(prev => ({ ...prev, budget: Number(e.target.value) }))}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 ${
-                    errors.budget ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="50000"
-                  min="0"
-                />
-                {errors.budget && (
-                  <p className="mt-1 text-sm text-red-600 flex items-center">
-                    <AlertCircle className="h-4 w-4 mr-1" />
-                    {errors.budget}
-                  </p>
-                )}
-              </div>
             </div>
             
             <div className="mt-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Description *
+                Description
               </label>
               <textarea
                 value={formData.description}
@@ -374,43 +421,52 @@ export default function EditProjectPage() {
               Sélection des Consultants
             </h2>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {availableConsultants.map((consultant) => (
-                <motion.div
-                  key={consultant.id}
-                  className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                    formData.selectedConsultants.includes(consultant.id)
-                      ? 'border-red-500 bg-red-50'
-                      : consultant.available
-                      ? 'border-gray-200 hover:border-gray-300'
-                      : 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
-                  }`}
-                  onClick={() => consultant.available && toggleConsultant(consultant.id)}
-                  whileHover={consultant.available ? { scale: 1.02 } : {}}
-                  whileTap={consultant.available ? { scale: 0.98 } : {}}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium text-gray-900">{consultant.name}</h3>
-                      <p className="text-sm text-gray-600">{consultant.role}</p>
-                      <p className="text-sm font-medium text-gray-900">€{consultant.dailyRate}/jour</p>
+            {loadingConsultants ? (
+              <div className="text-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-red-600 mx-auto mb-2" />
+                <p className="text-gray-600 text-sm">Chargement des consultants...</p>
+              </div>
+            ) : consultants.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-4">Aucun consultant disponible</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {consultants.map((consultant) => (
+                  <motion.div
+                    key={consultant.id}
+                    className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                      formData.selectedConsultants.includes(consultant.id)
+                        ? 'border-red-500 bg-red-50'
+                        : consultant.available
+                        ? 'border-gray-200 hover:border-gray-300'
+                        : 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
+                    }`}
+                    onClick={() => consultant.available && toggleConsultant(consultant.id)}
+                    whileHover={consultant.available ? { scale: 1.02 } : {}}
+                    whileTap={consultant.available ? { scale: 0.98 } : {}}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-medium text-gray-900">{consultant.name}</h3>
+                        <p className="text-sm text-gray-600">{consultant.role}</p>
+                        <p className="text-sm font-medium text-gray-900">€{consultant.dailyRate}/jour</p>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {!consultant.available && (
+                          <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">
+                            Indisponible
+                          </span>
+                        )}
+                        {formData.selectedConsultants.includes(consultant.id) && (
+                          <div className="w-6 h-6 bg-red-600 rounded-full flex items-center justify-center">
+                            <span className="text-white text-sm">✓</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      {!consultant.available && (
-                        <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">
-                          Indisponible
-                        </span>
-                      )}
-                      {formData.selectedConsultants.includes(consultant.id) && (
-                        <div className="w-6 h-6 bg-red-600 rounded-full flex items-center justify-center">
-                          <span className="text-white text-sm">✓</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
             
             {errors.consultants && (
               <p className="mt-4 text-sm text-red-600 flex items-center">
@@ -420,25 +476,6 @@ export default function EditProjectPage() {
             )}
           </motion.div>
 
-          {/* Client Notes */}
-          <motion.div 
-            className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.3 }}
-          >
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">
-              Notes Client (Optionnel)
-            </h2>
-            
-            <textarea
-              value={formData.clientNotes}
-              onChange={(e) => setFormData(prev => ({ ...prev, clientNotes: e.target.value }))}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-              placeholder="Ajoutez des notes spécifiques ou des exigences particulières..."
-            />
-          </motion.div>
 
           {/* Submit Button */}
           <motion.div 
@@ -480,7 +517,7 @@ export default function EditProjectPage() {
             </motion.button>
           </motion.div>
           
-          {errors.submit && (
+          {(errors.submit || error) && (
             <motion.div 
               className="p-4 bg-red-50 border border-red-200 rounded-lg"
               initial={{ opacity: 0 }}
@@ -488,7 +525,7 @@ export default function EditProjectPage() {
             >
               <p className="text-sm text-red-600 flex items-center">
                 <AlertCircle className="h-4 w-4 mr-2" />
-                {errors.submit}
+                {errors.submit || error}
               </p>
             </motion.div>
           )}

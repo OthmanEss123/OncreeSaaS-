@@ -36,7 +36,21 @@ class ProjectController extends Controller
         return $project->load('consultants');
     }
 
-    public function show(Project $project) { return $project->load('client'); }
+    public function show(Project $project) {
+        // Charger toutes les relations nécessaires pour la page de détails
+        $project->load([
+            'client',
+            'consultants' => function ($query) {
+                // Charger les consultants avec leurs work schedules
+                $query->with(['workSchedules' => function ($wsQuery) {
+                    // Trier les work schedules par date décroissante
+                    $wsQuery->orderBy('date', 'desc');
+                }]);
+            }
+        ]);
+        
+        return $project;
+    }
 
     public function update(Request $request, Project $project) {
         $data = $request->validate([

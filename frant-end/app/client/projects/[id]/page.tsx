@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
 import { 
@@ -17,10 +17,13 @@ import {
   TrendingUp,
   MapPin,
   Phone,
-  Mail
+  Mail,
+  Loader2
 } from 'lucide-react'
+import { ProjectAPI, invalidateCache } from '@/lib/api'
+import type { Project as ProjectType, Consultant as ConsultantType, WorkSchedule } from '@/lib/type'
 
-// TypeScript Interfaces
+// TypeScript Interfaces for frontend
 interface Project {
   id: string
   name: string
@@ -32,13 +35,13 @@ interface Project {
   budget: number
   totalCost: number
   totalDays: number
-  assignedConsultants: Consultant[]
+  assignedConsultants: ConsultantInfo[]
   clientNotes: string
   createdAt: string
   updatedAt: string
 }
 
-interface Consultant {
+interface ConsultantInfo {
   id: string
   name: string
   role: string
@@ -49,54 +52,145 @@ interface Consultant {
   phone: string
 }
 
-// Mock data - In real app, this would come from API
-const mockProject: Project = {
-  id: '1',
-  name: 'E-commerce Redesign',
-  description: 'Refonte complète de la plateforme e-commerce avec nouvelle interface utilisateur, optimisation des performances et intégration de nouvelles fonctionnalités de paiement.',
-  status: 'Active',
-  priority: 'High',
-  startDate: '2024-01-15',
-  endDate: '2024-03-15',
-  budget: 50000,
-  totalCost: 14400,
-  totalDays: 40,
-  assignedConsultants: [
-    {
-      id: '1',
-      name: 'Marie Dubois',
-      role: 'Designer',
-      dailyRate: 450,
-      daysWorked: 15,
-      cost: 5400,
-      email: 'marie.dubois@email.com',
-      phone: '+33 6 12 34 56 78'
-    },
-    {
-      id: '2',
-      name: 'Jean Martin',
-      role: 'Developer',
-      dailyRate: 550,
-      daysWorked: 25,
-      cost: 9000,
-      email: 'jean.martin@email.com',
-      phone: '+33 6 23 45 67 89'
+// Helper function to transform backend project data to frontend Project format
+const transformProjectToFrontend = (project: ProjectType): Project => {
+  const consultants = project.consultants || []
+  
+  // Calculate statistics from work schedules
+  const assignedConsultants: ConsultantInfo[] = consultants.map(consultant => {
+    const workSchedules = consultant.workSchedules || []
+    
+    // Calculate days worked (sum of days_worked)
+    const daysWorked = workSchedules.reduce((sum, ws) => sum + (ws.days_worked || 0), 0)
+    
+    // Calculate cost (days_worked * daily_rate + expenses)
+    const dailyRate = consultant.daily_rate || 0
+    const cost = workSchedules.reduce((sum, ws) => {
+      const daysCost = (ws.days_worked || 0) * dailyRate
+      let expenses = 0
+      if (ws.notes) {
+        try {
+          const notes = typeof ws.notes === 'string' ? JSON.parse(ws.notes) : ws.notes
+          if (notes.travelExpenses) {
+            if (Array.isArray(notes.travelExpenses)) {
+              expenses = notes.travelExpenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0)
+            } else {
+              expenses = parseFloat(notes.travelExpenses) || 0
+            }
+          }
+        } catch {}
+      }
+      return sum + daysCost + expenses
+    }, 0)
+
+    return {
+      id: consultant.id.toString(),
+      name: consultant.name || `${consultant.first_name} ${consultant.last_name}`,
+      role: consultant.role || 'Consultant',
+      dailyRate,
+      daysWorked: Math.round(daysWorked),
+      cost: Math.round(cost),
+      email: consultant.email || '',
+      phone: consultant.phone || 'Non renseigné'
     }
-  ],
-  clientNotes: 'Le client souhaite une interface moderne et intuitive, avec une attention particulière à l\'expérience mobile.',
-  createdAt: '2024-01-10',
-  updatedAt: '2024-01-20'
+  })
+
+  // Calculate total cost and days
+  const totalCost = assignedConsultants.reduce((sum, c) => sum + c.cost, 0)
+  const totalDays = assignedConsultants.reduce((sum, c) => sum + c.daysWorked, 0)
+
+  // Determine status based on dates
+  let status: 'Active' | 'Completed' | 'On Hold' | 'Planning' = 'Planning'
+  if (project.start_date) {
+    const startDate = new Date(project.start_date)
+    const endDate = project.end_date ? new Date(project.end_date) : null
+    const now = new Date()
+    
+    if (endDate && endDate < now) {
+      status = 'Completed'
+    } else if (startDate <= now) {
+      status = 'Active'
+    } else {
+      status = 'Planning'
+    }
+  }
+
+  // Priority is not stored in backend, default to Medium
+  const priority: 'Low' | 'Medium' | 'High' = 'Medium'
+
+  // Budget is not stored in backend, calculate from total cost with a margin
+  const budget = Math.max(totalCost * 1.2, 10000) // Add 20% margin or minimum 10k
+
+  return {
+    id: project.id.toString(),
+    name: project.name,
+    description: project.description || '',
+    status,
+    priority,
+    startDate: project.start_date || project.created_at || '',
+    endDate: project.end_date || undefined,
+    budget: Math.round(budget),
+    totalCost: Math.round(totalCost),
+    totalDays,
+    assignedConsultants,
+    clientNotes: '', // Not stored in backend currently
+    createdAt: project.created_at,
+    updatedAt: project.updated_at
+  }
 }
 
 export default function ProjectDetailsPage() {
   const router = useRouter()
   const params = useParams()
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [project, setProject] = useState<Project | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showAcceptModal, setShowAcceptModal] = useState(false)
 
-  // In real app, fetch project data based on params.id
-  const project = mockProject
+  // Fetch project data from API
+  useEffect(() => {
+    const fetchProjectData = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
+        
+        const projectId = parseInt(params.id as string)
+        if (isNaN(projectId)) {
+          throw new Error('ID de projet invalide')
+        }
+
+        const projectData = await ProjectAPI.get(projectId)
+        
+        // Debug: log the data structure
+        console.log('📦 Project data received:', projectData)
+        console.log('👥 Consultants:', projectData.consultants)
+        
+        // Transform backend data to frontend format
+        const transformedProject = transformProjectToFrontend(projectData)
+        setProject(transformedProject)
+      } catch (err: any) {
+        console.error('❌ Erreur lors du chargement du projet:', err)
+        console.error('Response data:', err.response?.data)
+        console.error('Response status:', err.response?.status)
+        
+        // Provide more detailed error message
+        const errorMessage = err.response?.data?.message 
+          || err.response?.data?.error 
+          || err.message 
+          || 'Erreur lors du chargement des données'
+        
+        setError(`Erreur ${err.response?.status || 'inconnue'}: ${errorMessage}`)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    if (params.id) {
+      fetchProjectData()
+    }
+  }, [params.id])
 
   // Helper functions
   const getStatusBadgeColor = (status: string) => {
@@ -120,49 +214,99 @@ export default function ProjectDetailsPage() {
 
   // Action handlers
   const handleAcceptProject = async () => {
+    if (!project) return
+    
     setIsLoading(true)
     try {
-      // TODO: API call to accept project
-      // await fetch(`/api/projects/${project.id}/accept`, { method: 'POST' })
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const projectId = parseInt(project.id)
+      // Update project to set start_date if not set
+      const updateData: Partial<ProjectType> = {}
+      if (!project.startDate) {
+        updateData.start_date = new Date().toISOString().split('T')[0]
+      }
+      
+      if (Object.keys(updateData).length > 0) {
+        await ProjectAPI.update(projectId, updateData)
+        invalidateCache(`/projects/${projectId}`)
+        invalidateCache('/projects')
+      }
+      
       setShowAcceptModal(false)
-      // Refresh project data or redirect
-      router.push('/client/dashboard')
-    } catch (error) {
+      // Refresh project data
+      const updatedProject = await ProjectAPI.get(projectId)
+      setProject(transformProjectToFrontend(updatedProject))
+    } catch (error: any) {
       console.error('Error accepting project:', error)
+      setError(error.response?.data?.message || 'Erreur lors de l\'acceptation du projet')
     } finally {
       setIsLoading(false)
     }
   }
 
   const handleEditProject = () => {
-    router.push(`/client/projects/${project.id}/edit`)
+    if (project) {
+      router.push(`/client/projects/${project.id}/edit`)
+    }
   }
 
   const handleDeleteProject = async () => {
-    setIsLoading(true)
+    if (!project) return
+    
+    setIsDeleting(true)
     try {
-      // TODO: API call to delete project
-      // await fetch(`/api/projects/${project.id}`, { method: 'DELETE' })
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const projectId = parseInt(project.id)
+      await ProjectAPI.delete(projectId)
+      invalidateCache('/projects')
       setShowDeleteModal(false)
       router.push('/client/dashboard')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting project:', error)
+      setError(error.response?.data?.message || 'Erreur lors de la suppression du projet')
     } finally {
-      setIsLoading(false)
+      setIsDeleting(false)
     }
   }
 
   // Calculate project progress
   const calculateProgress = () => {
-    if (!project.endDate) return 0
+    if (!project || !project.endDate || !project.startDate) return 0
     const start = new Date(project.startDate)
     const end = new Date(project.endDate)
     const now = new Date()
     const total = end.getTime() - start.getTime()
     const elapsed = now.getTime() - start.getTime()
     return Math.min(Math.max((elapsed / total) * 100, 0), 100)
+  }
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-red-600 mx-auto mb-4" />
+          <p className="text-gray-600">Chargement des données...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state
+  if (error || !project) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-4">
+          <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Erreur</h2>
+          <p className="text-gray-600 mb-6">{error || 'Projet introuvable'}</p>
+          <button
+            onClick={() => router.back()}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Retour
+          </button>
+        </div>
+      </div>
+    )
   }
 
   const progress = calculateProgress()
@@ -359,7 +503,10 @@ export default function ProjectDetailsPage() {
               </h2>
               
               <div className="space-y-4">
-                {project.assignedConsultants.map((consultant) => (
+                {project.assignedConsultants.length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-4">Aucun consultant assigné</p>
+                ) : (
+                  project.assignedConsultants.map((consultant) => (
                   <div key={consultant.id} className="border border-gray-200 rounded-lg p-4">
                     <div className="flex items-center space-x-3 mb-3">
                       <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
@@ -399,7 +546,8 @@ export default function ProjectDetailsPage() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </motion.div>
 
@@ -510,10 +658,10 @@ export default function ProjectDetailsPage() {
               </button>
               <button
                 onClick={handleDeleteProject}
-                disabled={isLoading}
+                disabled={isDeleting}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
               >
-                {isLoading ? 'Suppression...' : 'Supprimer'}
+                {isDeleting ? 'Suppression...' : 'Supprimer'}
               </button>
             </div>
           </motion.div>

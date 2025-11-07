@@ -45,7 +45,19 @@ class ConsultantController extends Controller
      */
     public function show(Consultant $consultant)
     {
-        return $consultant->load('client');
+        // Charger toutes les relations nécessaires pour la page de détails
+        $consultant->load([
+            'client',
+            'project.client', // Projet actuel avec son client
+            'workSchedules' => function ($query) {
+                // Charger les work schedules avec leurs relations
+                $query->with(['workType', 'leaveType'])
+                      ->orderBy('date', 'desc');
+            },
+            'assignments.project' // Assignments historiques avec leurs projets
+        ]);
+        
+        return $consultant;
     }
 
     /**

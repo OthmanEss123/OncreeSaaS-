@@ -68,6 +68,9 @@ export interface Consultant {
   address: string | null;
   password: string | null;
   project_id: number | null;
+  project?: Project;
+  workSchedules?: WorkSchedule[];
+  assignments?: Assignment[];
 }
 
 export interface Project {
