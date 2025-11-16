@@ -9,7 +9,9 @@ use Illuminate\Support\Facades\Mail;
 
 class WorkScheduleController extends Controller
 {
-    public function index() { return WorkSchedule::with('consultant')->get(); }
+    public function index() { 
+        return WorkSchedule::with(['consultant.client', 'workType', 'leaveType'])->get(); 
+    }
     
     /**
      * Récupère les work schedules du consultant connecté uniquement

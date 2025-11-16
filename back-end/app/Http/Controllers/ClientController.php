@@ -18,6 +18,8 @@ class ClientController extends Controller
             'address'       => 'nullable|string|max:255',
             'password'      => 'nullable|string|max:255',
         ]);
+
+        $data['password'] = bcrypt($data['password']);
         return Client::create($data);
     }
 
@@ -32,6 +34,9 @@ class ClientController extends Controller
             'address'       => 'nullable|string|max:255',
             'password'      => 'nullable|string|max:255',
         ]);
+        if (isset($data['password'])) {
+            $data['password'] = bcrypt($data['password']);
+        }
         $client->update($data);
         return $client;
     }

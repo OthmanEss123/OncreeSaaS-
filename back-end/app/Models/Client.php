@@ -24,4 +24,22 @@ class Client extends Authenticatable
     public function factures()   { return $this->hasMany(\App\Models\Facture::class); }
     protected $hidden = ['password'];
 
+    public function twoFactorSetting()
+    {
+        return $this->morphOne(TwoFactorSetting::class, 'mfaable');
+    }
+
+    public function twoFactorChallenges()
+    {
+        return $this->morphMany(TwoFactorChallenge::class, 'mfaable');
+    }
+
+    /**
+     * Route notifications for the mail channel.
+     * Since Client uses 'contact_email' instead of 'email', we need to specify it.
+     */
+    public function routeNotificationForMail($notification)
+    {
+        return $this->contact_email;
+    }
 }

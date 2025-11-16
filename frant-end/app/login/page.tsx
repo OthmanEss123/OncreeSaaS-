@@ -32,6 +32,100 @@ export default function LoginPage() {
         { email, password }
       )
 
+      // Debug: Log la réponse de l'API
+      console.log('🔍 Réponse API Login:', {
+        mfa_required: data.mfa_required,
+        type: data.type,
+        challenge_id: data.challenge_id,
+        has_token: !!data.token,
+        code: data.code // Code MFA en développement
+      })
+
+      if (data.mfa_required) {
+        console.log('✅ MFA requis - Redirection vers /mfa')
+        
+        // Vérifier que challenge_id existe et est valide
+        if (!data.challenge_id) {
+          console.error('❌ challenge_id manquant dans la réponse:', data)
+          setError('Erreur: challenge_id manquant. Veuillez réessayer.')
+          setLoading(false)
+          return
+        }
+
+        // Vérifier que challenge_id est un UUID valide
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        if (!uuidRegex.test(data.challenge_id)) {
+          console.error('❌ challenge_id invalide (pas un UUID):', data.challenge_id)
+          setError('Erreur: challenge_id invalide. Veuillez réessayer.')
+          setLoading(false)
+          return
+        }
+        
+        console.log('✅ Challenge ID valide:', data.challenge_id)
+        
+        // Log du code MFA en développement (sans alerte)
+        if (data.code) {
+          console.log('🔑 Code MFA (développement):', data.code)
+        }
+        
+        // Stocker les données dans sessionStorage de manière synchrone
+        try {
+          sessionStorage.setItem("mfa.challengeId", String(data.challenge_id))
+          sessionStorage.setItem("mfa.type", String(data.type ?? ""))
+          sessionStorage.setItem("mfa.email", email)
+          
+          // Vérifier que les données ont bien été stockées
+          const storedChallengeId = sessionStorage.getItem("mfa.challengeId")
+          const storedType = sessionStorage.getItem("mfa.type")
+          const storedEmail = sessionStorage.getItem("mfa.email")
+          
+          console.log('📦 Données stockées dans sessionStorage:', {
+            challengeId: storedChallengeId,
+            type: storedType,
+            email: storedEmail,
+            allSessionStorage: {
+              keys: Object.keys(sessionStorage),
+              values: Object.keys(sessionStorage).map(key => ({
+                key,
+                value: sessionStorage.getItem(key)
+              }))
+            }
+          })
+          
+          // Vérifier que le challengeId a bien été stocké
+          if (!storedChallengeId || storedChallengeId !== String(data.challenge_id)) {
+            console.error('❌ Erreur: challengeId n\'a pas été stocké correctement dans sessionStorage')
+            setError('Erreur lors du stockage des données. Veuillez réessayer.')
+            setLoading(false)
+            return
+          }
+          
+          // Attendre un court délai pour s'assurer que sessionStorage est bien mis à jour
+          // avant de naviguer
+          await new Promise(resolve => setTimeout(resolve, 100))
+          
+          // Double vérification avant la navigation
+          const verifyChallengeId = sessionStorage.getItem("mfa.challengeId")
+          if (!verifyChallengeId || verifyChallengeId !== String(data.challenge_id)) {
+            console.error('❌ Erreur: challengeId perdu après stockage')
+            setError('Erreur lors du stockage des données. Veuillez réessayer.')
+            setLoading(false)
+            return
+          }
+          
+          console.log('✅ Vérification réussie, redirection vers /mfa')
+          router.push("/mfa")
+        } catch (storageError) {
+          console.error('❌ Erreur lors du stockage dans sessionStorage:', storageError)
+          setError('Erreur lors du stockage des données. Veuillez réessayer.')
+          setLoading(false)
+          return
+        }
+        return
+      }
+
+      console.log('⚠️ MFA non requis - Connexion directe')
+
       // 🗑️ Vider le cache avant de stocker le nouveau token pour éviter les données d'un ancien utilisateur
       clearAllCache()
 

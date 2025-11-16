@@ -36,4 +36,14 @@ class Consultant extends Authenticatable
     return $this->belongsTo(Project::class);
 }
 
+    public function twoFactorSetting()
+    {
+        return $this->morphOne(TwoFactorSetting::class, 'mfaable');
+    }
+
+    public function twoFactorChallenges()
+    {
+        return $this->morphMany(TwoFactorChallenge::class, 'mfaable');
+    }
+
 }

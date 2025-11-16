@@ -2,14 +2,19 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use App\Models\Client;
 use App\Models\Manager;
 use App\Models\Rh;
 use App\Models\Comptable;
 use App\Models\Consultant;
 use App\Models\Admin;
+use App\Models\TwoFactorChallenge;
+use App\Models\TwoFactorSetting;
+use App\Notifications\TwoFactorCodeNotification;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
@@ -53,14 +58,78 @@ class AuthController extends Controller
             return response()->json(['message' => 'Identifiants invalides'], 401);
         }
 
-        // Créer un token avec Laravel Sanctum
-        $token = $user->createToken($userType.'-token')->plainTextToken;
+        // MFA n'est pas requis pour les admins - connexion directe
+        if ($userType === 'admin') {
+            $token = $user->createToken($userType . '-token')->plainTextToken;
+
+            return response()->json([
+                'token' => $token,
+                'type'  => $userType,
+                'user'  => $user,
+                'mfa_required' => false,
+            ]);
+        }
+
+        // Pour tous les autres types d'utilisateurs, MFA est obligatoire
+        // Vérifier le statut MFA
+        $setting = $user->twoFactorSetting()->first();
+        
+        // Si MFA n'est pas activé, le créer automatiquement
+        if (!$setting) {
+            $setting = $user->twoFactorSetting()->create([
+                'channel' => 'email',
+                'enabled' => true,
+            ]);
+        } elseif (!$setting->enabled) {
+            // Si le setting existe mais est désactivé, le réactiver
+            $setting->update(['enabled' => true]);
+        }
+        
+        // Log pour debug (en développement)
+        if (app()->environment('local')) {
+            \Log::info('MFA Check', [
+                'user_type' => $userType,
+                'user_id' => $user->id,
+                'user_email' => $user->email ?? $user->contact_email ?? 'N/A',
+                'setting_exists' => $setting ? true : false,
+                'setting_enabled' => $setting ? $setting->enabled : false,
+            ]);
+        }
+
+        // MFA est maintenant toujours activé pour les non-admins - générer le code
+
+        $code = (string) random_int(100000, 999999);
+        $ttlMinutes = 5;
+
+        $challenge = DB::transaction(function () use ($user, $setting, $code, $ttlMinutes) {
+            $user->twoFactorChallenges()->delete();
+
+            return $user->twoFactorChallenges()->create([
+                'channel'    => $setting->channel,
+                'code_hash'  => Hash::make($code),
+                'expires_at' => Carbon::now()->addMinutes($ttlMinutes),
+            ]);
+        });
+
+        try {
+        $user->notify(new TwoFactorCodeNotification($code, $ttlMinutes));
+        } catch (\Exception $e) {
+            \Log::error('Error sending MFA code notification: ' . $e->getMessage());
+            // Continue anyway - the code is already generated and stored
+            // In development, you might want to return the code for testing
+            if (app()->environment('local')) {
+                \Log::info('MFA Code for testing: ' . $code);
+            }
+        }
 
         return response()->json([
-            'token' => $token,
-            'type'  => $userType,
-            'user'  => $user
-        ]);
+            'mfa_required' => true,
+            'challenge_id' => $challenge->id,
+            'channel'      => $setting->channel,
+            'type'         => $userType,
+            // In development, return the code for testing
+            'code'         => app()->environment('local') ? $code : null,
+        ], 201);
     }
 
     /**

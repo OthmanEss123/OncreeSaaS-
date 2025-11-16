@@ -16,4 +16,14 @@ class Comptable extends Authenticatable
     protected $table = 'comptables';       // nom de la table dans la base de données
 
     public function client() { return $this->belongsTo(Client::class); }
+
+    public function twoFactorSetting()
+    {
+        return $this->morphOne(TwoFactorSetting::class, 'mfaable');
+    }
+
+    public function twoFactorChallenges()
+    {
+        return $this->morphMany(TwoFactorChallenge::class, 'mfaable');
+    }
 }

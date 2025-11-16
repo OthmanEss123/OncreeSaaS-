@@ -1,6 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
+import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -81,7 +82,7 @@ export function RoleLayout({ children, sidebarItems, userRole, userName, userEma
           {/* Navigation */}
           <nav className="flex-1 px-4 space-y-1">
             {sidebarItems.map((item, index) => (
-              <a
+              <Link
                 key={index}
                 href={item.href}
                 className={cn(
@@ -90,10 +91,11 @@ export function RoleLayout({ children, sidebarItems, userRole, userName, userEma
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground",
                 )}
+                onClick={() => setSidebarOpen(false)}
               >
                 {item.icon}
                 <span className="ml-3">{item.label}</span>
-              </a>
+              </Link>
             ))}
           </nav>
 

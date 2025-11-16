@@ -35,6 +35,9 @@ class ConsultantController extends Controller
             'project_id'  => 'nullable|exists:projects,id',
         ]);
 
+        $data['name'] = trim($data['first_name'] . ' ' . $data['last_name']);
+        unset($data['first_name'], $data['last_name']);
+
         $data['password'] = bcrypt($data['password']);
 
         return Consultant::create($data);
@@ -79,9 +82,17 @@ class ConsultantController extends Controller
             'project_id'  => 'nullable|exists:projects,id', 
         ]);
 
+        if (isset($data['first_name']) || isset($data['last_name'])) {
+            $first = $data['first_name'] ?? '';
+            $last  = $data['last_name'] ?? '';
+            $data['name'] = trim($first.' '.$last);
+        }
+        unset($data['first_name'], $data['last_name']);
+    
         if (isset($data['password'])) {
             $data['password'] = bcrypt($data['password']);
         }
+    
 
         $consultant->update($data);
         return $consultant;

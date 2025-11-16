@@ -38,6 +38,16 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
     
+    // Log pour debug (surtout pour MFA)
+    if (config.url?.includes('mfa/verify')) {
+      console.log('🔍 Axios Request Interceptor - MFA Verify:', {
+        url: config.url,
+        method: config.method,
+        data: config.data,
+        headers: config.headers
+      })
+    }
+    
     return config
   },
   (error) => {
@@ -47,8 +57,27 @@ api.interceptors.request.use(
 
 // Add response interceptor for better error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Log pour debug (surtout pour MFA)
+    if (response.config.url?.includes('mfa/verify')) {
+      console.log('✅ Axios Response Interceptor - MFA Verify Success:', {
+        status: response.status,
+        data: response.data
+      })
+    }
+    return response
+  },
   (error) => {
+    // Log pour debug (surtout pour MFA)
+    if (error.config?.url?.includes('mfa/verify')) {
+      console.error('❌ Axios Response Interceptor - MFA Verify Error:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        requestData: error.config?.data
+      })
+    }
+    
     // If 401, clear token and redirect to login
     if (error.response?.status === 401) {
       if (typeof window !== 'undefined') {
@@ -204,7 +233,9 @@ export const ComptableAPI = {
     const result = await api.delete(`/comptables/${id}`)
     invalidateCache('/comptables') // Invalider cache après suppression
     return result
-  }
+  },
+  // Récupérer les informations du comptable connecté
+  me: () => cachedGet<Comptable>('/comptable/me', 2 * 60 * 1000)
 }
 
 // ========================
@@ -384,6 +415,18 @@ export const PasswordRecoveryAPI = {
   // Step 3: Reset password with verified code
   resetPassword: (email: string, code: string, password: string, password_confirmation: string) => 
     api.post('/reset-password', { email, code, password, password_confirmation })
+}
+
+// ========================
+//  MFA
+// ========================
+export const MfaAPI = {
+  verify: (challengeId: string, code: string) => {
+    console.log('🔍 MfaAPI.verify appelé avec:', { challengeId, code })
+    const requestData = { challenge_id: challengeId, code }
+    console.log('📤 Données de la requête:', requestData)
+    return api.post('/mfa/verify', requestData)
+  }
 }
 
 // ========================

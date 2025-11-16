@@ -19,6 +19,16 @@ class Admin extends Authenticatable
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
     ];
+
+    public function twoFactorSetting()
+    {
+        return $this->morphOne(TwoFactorSetting::class, 'mfaable');
+    }
+
+    public function twoFactorChallenges()
+    {
+        return $this->morphMany(TwoFactorChallenge::class, 'mfaable');
+    }
 }
 
 

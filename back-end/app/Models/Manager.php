@@ -17,4 +17,14 @@ class Manager extends Authenticatable
 
     public function client() { return $this->belongsTo(Client::class); }
     public function factures() { return $this->hasMany(Facture::class,'created_by_manager'); }
+
+    public function twoFactorSetting()
+    {
+        return $this->morphOne(TwoFactorSetting::class, 'mfaable');
+    }
+
+    public function twoFactorChallenges()
+    {
+        return $this->morphMany(TwoFactorChallenge::class, 'mfaable');
+    }
 }

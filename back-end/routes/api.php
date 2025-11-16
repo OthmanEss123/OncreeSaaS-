@@ -16,6 +16,7 @@ use App\Http\Controllers\WorkTypeController;
 use App\Http\Controllers\LeaveTypeController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EmailResetPasswordController;
+use App\Http\Controllers\MfaController;
 
 /*
 |--------------------------------------------------------------------------
@@ -38,6 +39,8 @@ Route::post('reset-password-old', [App\Http\Controllers\PasswordRecoveryControll
 Route::post('forgot-password', [EmailResetPasswordController::class, 'sendResetCode']);
 Route::post('verify-code', [EmailResetPasswordController::class, 'verifyCode']);
 Route::post('reset-password', [EmailResetPasswordController::class, 'resetPassword']);
+
+Route::post('mfa/verify', [MfaController::class, 'verify'])->middleware('throttle:6,1');
 
 // Routes publiques pour les types
 Route::get('work-types', [WorkTypeController::class, 'index']);

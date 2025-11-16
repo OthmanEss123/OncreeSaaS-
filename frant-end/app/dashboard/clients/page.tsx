@@ -233,7 +233,7 @@ export default function Clients() {
               type="email"
               value={form.contact_email}
               onChange={e => handleChange('contact_email', e.target.value)}
-              placeholder="Enter email address"
+              placeholder="Enter email address (example@example.com)"
             />
           </div>
           <div className="space-y-2">
@@ -242,16 +242,17 @@ export default function Clients() {
               id="clientPhone"
               value={form.contact_phone}
               onChange={e => handleChange('contact_phone', e.target.value)}
-              placeholder="Enter phone number"
+              placeholder="Enter phone number (e.g., +33 6 12 34 56 78)"
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="clientAddress">Password</Label>
             <Input
+              type="password"
               id="clientPassword"
               value={form.password}
               onChange={e => handleChange('password', e.target.value)}
-              placeholder="Enter password"
+              placeholder="Enter password (minimum 8 characters)"
             />
           </div>
           <div className="flex gap-2 pt-4">

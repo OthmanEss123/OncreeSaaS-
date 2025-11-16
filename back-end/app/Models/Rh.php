@@ -15,4 +15,14 @@ class Rh extends Authenticatable
     protected $hidden   = ['password'];
     protected $table = 'rh';       // nom de la table dans la base de données
     public function client() { return $this->belongsTo(Client::class); }
+
+    public function twoFactorSetting()
+    {
+        return $this->morphOne(TwoFactorSetting::class, 'mfaable');
+    }
+
+    public function twoFactorChallenges()
+    {
+        return $this->morphMany(TwoFactorChallenge::class, 'mfaable');
+    }
 }
