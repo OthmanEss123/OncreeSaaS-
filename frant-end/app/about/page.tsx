@@ -4,7 +4,7 @@ import { Users, Target, Heart, Zap, ArrowRight } from "lucide-react"
 export default function About() {
   return (
     <SharedLayout>
-      {/* Hero Section */}
+      {/* Hero Section  */}
       <section className="py-20 lg:py-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
