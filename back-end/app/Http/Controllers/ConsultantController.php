@@ -36,9 +36,9 @@ class ConsultantController extends Controller
         ]);
 
         $data['name'] = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
-if (empty($data['name'])) {
-    $data['name'] = $data['email']; // Fallback sur l'email si name est vide
-}
+        if (empty($data['name'])) {
+            $data['name'] = $data['email']; // Fallback sur l'email si name est vide
+        }
         unset($data['first_name'], $data['last_name']);
 
         $data['password'] = bcrypt($data['password']);
@@ -89,6 +89,9 @@ if (empty($data['name'])) {
             $first = $data['first_name'] ?? '';
             $last  = $data['last_name'] ?? '';
             $data['name'] = trim($first.' '.$last);
+            if (empty($data['name'])) {
+                $data['name'] = $data['email'] ?? $consultant->email; // Fallback sur l'email si name est vide
+            }
         }
         unset($data['first_name'], $data['last_name']);
     
