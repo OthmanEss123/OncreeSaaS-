@@ -112,14 +112,28 @@ class AuthController extends Controller
         });
 
         try {
-        $user->notify(new TwoFactorCodeNotification($code, $ttlMinutes));
+            $user->notify(new TwoFactorCodeNotification($code, $ttlMinutes));
+            \Log::info('MFA Code sent successfully', [
+                'user_type' => $userType,
+                'user_id' => $user->id,
+                'email' => $user->email ?? $user->contact_email ?? 'N/A',
+                'challenge_id' => $challenge->id,
+            ]);
         } catch (\Exception $e) {
-            \Log::error('Error sending MFA code notification: ' . $e->getMessage());
-            // Continue anyway - the code is already generated and stored
-            // In development, you might want to return the code for testing
-            if (app()->environment('local')) {
-                \Log::info('MFA Code for testing: ' . $code);
-            }
+            \Log::error('Error sending MFA code notification', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_type' => $userType,
+                'user_id' => $user->id,
+                'email' => $user->email ?? $user->contact_email ?? 'N/A',
+                'challenge_id' => $challenge->id,
+            ]);
+            // En production, log le code pour débugger temporairement
+            \Log::info('MFA Code (production debug): ' . $code, [
+                'user_id' => $user->id,
+                'challenge_id' => $challenge->id,
+                'email' => $user->email ?? $user->contact_email ?? 'N/A',
+            ]);
         }
 
         return response()->json([
