@@ -35,7 +35,10 @@ class ConsultantController extends Controller
             'project_id'  => 'nullable|exists:projects,id',
         ]);
 
-        $data['name'] = trim($data['first_name'] . ' ' . $data['last_name']);
+        $data['name'] = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
+if (empty($data['name'])) {
+    $data['name'] = $data['email']; // Fallback sur l'email si name est vide
+}
         unset($data['first_name'], $data['last_name']);
 
         $data['password'] = bcrypt($data['password']);
