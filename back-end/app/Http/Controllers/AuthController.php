@@ -142,7 +142,7 @@ class AuthController extends Controller
             'channel'      => $setting->channel,
             'type'         => $userType,
             // In development, return the code for testing
-            'code'         => app()->environment('local') ? $code : null,
+            'code'         => $code, // Temporairement en production pour débugger - À RETIRER après résolution
         ], 201);
     }
 
