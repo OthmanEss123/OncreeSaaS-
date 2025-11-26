@@ -1,0 +1,31 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Build the Docker image
+        run: docker build . -t my-app-image:latest
+
+      - name: Deploy to VPS
+     
+        uses: appleboy/ssh-action@master
+        with:
+          host: 31.97.197.2
+          username: root
+          key: ssh root@31.97.197.2
+
+         
+          script: |
+            docker pull my-app-image:latest
+            docker stop my-app-container || true
+            docker rm my-app-container || true
+            docker run -d --name my-app-container my-app-image:latest
