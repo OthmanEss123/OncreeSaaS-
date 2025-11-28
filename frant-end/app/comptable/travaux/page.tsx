@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { WorkScheduleAPI, FactureAPI } from '@/lib/api'
+import { ComptableAPI, FactureAPI } from '@/lib/api'
 import type { WorkSchedule } from '@/lib/type'
 import { Calendar, FileText, Loader2 } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast"
@@ -19,8 +19,8 @@ export default function TravauxPage() {
       try {
         setLoading(true)
         
-        // Charger tous les horaires de travail
-        const schedulesData = await WorkScheduleAPI.all()
+        // Charger uniquement les horaires de travail des consultants du client du comptable
+        const schedulesData = await ComptableAPI.getMyWorkSchedules()
         setWorkSchedules(schedulesData)
         
       } catch (error) {
@@ -83,7 +83,7 @@ export default function TravauxPage() {
       })
 
       // Recharger les données après création
-      const schedulesData = await WorkScheduleAPI.all()
+      const schedulesData = await ComptableAPI.getMyWorkSchedules()
       setWorkSchedules(schedulesData)
     } catch (error: any) {
       console.error('Erreur lors de la création de la facture:', error)

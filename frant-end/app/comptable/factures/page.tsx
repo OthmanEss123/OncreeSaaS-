@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
-import { FactureAPI } from '@/lib/api'
+import { ComptableAPI } from '@/lib/api'
 import type { Facture } from '@/lib/type'
 import { Receipt, Plus, Eye, ArrowLeft, Loader2, Calendar, Euro, User } from 'lucide-react'
 
@@ -25,7 +25,8 @@ export default function FacturesPage() {
   const loadFactures = async () => {
     try {
       setLoading(true)
-      const data = await FactureAPI.all()
+      // Charger uniquement les factures du client du comptable
+      const data = await ComptableAPI.getMyFactures()
       // S'assurer que data est un tableau
       if (Array.isArray(data)) {
         setFactures(data)

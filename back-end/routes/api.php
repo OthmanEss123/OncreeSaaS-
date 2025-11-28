@@ -60,6 +60,11 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::get('/consultant/dashboard-data', [ConsultantController::class, 'getDashboardData']);
     Route::get('/admin/consultants-data', [ConsultantController::class, 'getAdminConsultantsData']);
     
+    // 🚀 Endpoints pour comptable - données filtrées par client_id
+    Route::get('/comptable/consultants', [ComptableController::class, 'getMyConsultants']);
+    Route::get('/comptable/work-schedules', [ComptableController::class, 'getMyWorkSchedules']);
+    Route::get('/comptable/factures', [ComptableController::class, 'getMyFactures']);
+    
     // Routes pour les work schedules (authentifiées) avec rate limit augmenté
     Route::get('/my-work-schedules', [WorkScheduleController::class, 'mySchedules']);
     Route::get('/work-logs-grouped', [WorkScheduleController::class, 'getWorkLogsGroupedByMonth']);

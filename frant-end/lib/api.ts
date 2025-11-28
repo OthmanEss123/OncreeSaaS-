@@ -235,7 +235,20 @@ export const ComptableAPI = {
     return result
   },
   // Récupérer les informations du comptable connecté
-  me: () => cachedGet<Comptable>('/comptable/me', 2 * 60 * 1000)
+  me: () => cachedGet<Comptable>('/comptable/me', 2 * 60 * 1000),
+  // 🚀 Endpoints filtrés par client_id du comptable
+  getMyConsultants: async () => {
+    const response = await cachedGet<ApiResponse<Consultant[]>>('/comptable/consultants', 3 * 60 * 1000)
+    return response.data
+  },
+  getMyWorkSchedules: async () => {
+    const response = await cachedGet<ApiResponse<WorkSchedule[]>>('/comptable/work-schedules', 3 * 60 * 1000)
+    return response.data
+  },
+  getMyFactures: async () => {
+    const response = await cachedGet<ApiResponse<Facture[]>>('/comptable/factures', 3 * 60 * 1000)
+    return response.data
+  }
 }
 
 // ========================

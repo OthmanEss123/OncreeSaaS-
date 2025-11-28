@@ -19,13 +19,13 @@ export default function ComptablePage() {
       try {
         setLoading(true)
         
-        // Charger les consultants
-        const consultantsData = await ConsultantAPI.all()
-        setConsultants(consultantsData)
-        
         // Charger les informations du comptable connecté
         const comptableData = await ComptableAPI.me()
         setComptable(comptableData)
+        
+        // Charger uniquement les consultants du client du comptable
+        const consultantsData = await ComptableAPI.getMyConsultants()
+        setConsultants(consultantsData)
         
       } catch (error) {
         console.error('Erreur lors du chargement des données:', error)

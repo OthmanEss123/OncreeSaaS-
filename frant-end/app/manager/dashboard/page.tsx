@@ -6,26 +6,18 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/use-auth'
 import { useConsultants } from '@/hooks/use-consultants'
 import { useProjects } from '@/hooks/use-projects'
+import { useRh } from '@/hooks/use-rh'
+import { useComptables } from '@/hooks/use-comptables'
 import { 
   Users, 
   Briefcase, 
-  UserPlus, 
   Calculator,
   UserCheck,
   Shield,
-  BarChart3,
-  TrendingUp,
-  Calendar,
-  Clock,
-  Euro,
   Eye,
   Edit,
-  Trash2,
   LogOut,
   Plus,
-  Settings,
-  FileText,
-  Activity,
   AlertCircle
 } from 'lucide-react'
 
@@ -44,7 +36,9 @@ export default function ManagerDashboard() {
   const router = useRouter()
   const { user, loading: authLoading, isAuthenticated, logout } = useAuth()
   const { consultants: allConsultants, loading: consultantsLoading, error: consultantsError } = useConsultants()
-  const { projects, loading: projectsLoading, error: projectsError } = useProjects()
+  const { projects: allProjects, loading: projectsLoading, error: projectsError } = useProjects()
+  const { rhList: allRh, loading: rhLoading, error: rhError } = useRh()
+  const { comptables: allComptables, loading: comptablesLoading, error: comptablesError } = useComptables()
   
   // State pour gérer la visibilité des sections
   const [visibleSections, setVisibleSections] = useState({
@@ -65,15 +59,36 @@ export default function ManagerDashboard() {
     totalComptables: 0
   })
 
+  // Récupérer le client_id du manager
+  const clientId = (user as any)?.client_id
+
   // Filtrer les consultants par client_id du manager
   const consultants = React.useMemo(() => {
-    if (!user?.client_id || !allConsultants) return []
-    return allConsultants.filter(c => c.client_id === user.client_id)
-  }, [allConsultants, user?.client_id])
+    if (!clientId || !allConsultants) return []
+    return allConsultants.filter(c => c.client_id === clientId)
+  }, [allConsultants, clientId])
+
+  // Filtrer les projets par client_id du manager
+  const projects = React.useMemo(() => {
+    if (!clientId || !allProjects) return []
+    return allProjects.filter(p => p.client_id === clientId)
+  }, [allProjects, clientId])
+
+  // Filtrer les RH par client_id du manager
+  const rhList = React.useMemo(() => {
+    if (!clientId || !allRh) return []
+    return allRh.filter(r => r.client_id === clientId)
+  }, [allRh, clientId])
+
+  // Filtrer les comptables par client_id du manager
+  const comptables = React.useMemo(() => {
+    if (!clientId || !allComptables) return []
+    return allComptables.filter(c => c.client_id === clientId)
+  }, [allComptables, clientId])
 
   // Calculate statistics
   useEffect(() => {
-    if (consultants && projects) {
+    if (consultants && projects && rhList && comptables) {
       const activeConsultants = consultants.filter(c => c.status === 'active').length
       const activeProjects = projects.filter(p => p.start_date && !p.end_date).length
       
@@ -82,12 +97,12 @@ export default function ManagerDashboard() {
         activeConsultants,
         totalProjects: projects.length,
         activeProjects,
-        totalManagers: 1, // Le manager actuel
-        totalRh: 0, // TODO: Fetch from API
-        totalComptables: 0 // TODO: Fetch from API
+        totalManagers: 1,
+        totalRh: rhList.length,
+        totalComptables: comptables.length
       })
     }
-  }, [consultants, projects])
+  }, [consultants, projects, rhList, comptables])
 
   // Redirection si pas authentifié
   useEffect(() => {
@@ -102,7 +117,7 @@ export default function ManagerDashboard() {
   }
 
   // Affichage du loading
-  if (authLoading || consultantsLoading || projectsLoading) {
+  if (authLoading || consultantsLoading || projectsLoading || rhLoading || comptablesLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -114,16 +129,6 @@ export default function ManagerDashboard() {
   }
 
   // Helper functions
-  const getRoleBadgeColor = (role: string) => {
-    switch (role.toLowerCase()) {
-      case 'consultant': return 'bg-blue-100 text-blue-800'
-      case 'manager': return 'bg-orange-100 text-orange-800'
-      case 'rh': return 'bg-green-100 text-green-800'
-      case 'comptable': return 'bg-purple-100 text-purple-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
   const getStatusBadgeColor = (status: string) => {
     return status === 'active' 
       ? 'bg-green-100 text-green-800' 
@@ -132,7 +137,6 @@ export default function ManagerDashboard() {
 
   // Fonction pour afficher une section et défiler vers elle
   const showSection = (sectionKey: 'consultants' | 'rh' | 'comptables' | 'projects', sectionId: string) => {
-    // Cacher toutes les sections et afficher uniquement celle sélectionnée
     setVisibleSections({
       consultants: false,
       rh: false,
@@ -141,7 +145,6 @@ export default function ManagerDashboard() {
       [sectionKey]: true
     })
     
-    // Attendre un peu que la section soit rendue, puis défiler
     setTimeout(() => {
       const element = document.getElementById(sectionId)
       if (element) {
@@ -156,7 +159,6 @@ export default function ManagerDashboard() {
       title: 'Gérer les Consultants',
       description: 'Voir la liste des consultants',
       icon: Users,
-      color: 'blue',
       bgColor: 'bg-blue-50',
       textColor: 'text-blue-600',
       hoverColor: 'hover:bg-blue-100',
@@ -167,7 +169,6 @@ export default function ManagerDashboard() {
       title: 'Gérer les RH',
       description: 'Voir la liste des RH',
       icon: UserCheck,
-      color: 'green',
       bgColor: 'bg-green-50',
       textColor: 'text-green-600',
       hoverColor: 'hover:bg-green-100',
@@ -178,7 +179,6 @@ export default function ManagerDashboard() {
       title: 'Gérer les Comptables',
       description: 'Voir la liste des comptables',
       icon: Calculator,
-      color: 'purple',
       bgColor: 'bg-purple-50',
       textColor: 'text-purple-600',
       hoverColor: 'hover:bg-purple-100',
@@ -189,7 +189,6 @@ export default function ManagerDashboard() {
       title: 'Voir les Projets',
       description: 'Consulter la liste des projets',
       icon: Briefcase,
-      color: 'indigo',
       bgColor: 'bg-indigo-50',
       textColor: 'text-indigo-600',
       hoverColor: 'hover:bg-indigo-100',
@@ -209,19 +208,14 @@ export default function ManagerDashboard() {
                 <Shield className="h-6 w-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  Dashboard Manager
-                </h1>
+                <h1 className="text-2xl font-bold text-gray-900">Dashboard Manager</h1>
                 <p className="text-gray-600">
                   Bienvenue, {(user as any)?.name || user?.contact_name || 'Manager'}
                 </p>
-                <p className="text-sm text-gray-500">
-                  {user?.company_name || 'Entreprise'}
-                </p>
+                <p className="text-sm text-gray-500">{user?.company_name || 'Entreprise'}</p>
               </div>
             </div>
             
-            {/* Logout Button */}
             <motion.button
               onClick={logout}
               className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2"
@@ -250,9 +244,7 @@ export default function ManagerDashboard() {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Consultants</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {stats.activeConsultants}/{stats.totalConsultants}
-                </p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalConsultants}</p>
                 <p className="text-xs text-gray-500">actifs</p>
               </div>
             </div>
@@ -270,9 +262,7 @@ export default function ManagerDashboard() {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Projets</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {stats.activeProjects}/{stats.totalProjects}
-                </p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalProjects}</p>
                 <p className="text-xs text-gray-500">actifs</p>
               </div>
             </div>
@@ -332,13 +322,9 @@ export default function ManagerDashboard() {
               >
                 <div className="flex items-center mb-4">
                   <card.icon className={`h-8 w-8 ${card.textColor}`} />
-                  <h3 className="ml-3 text-lg font-semibold text-gray-900">
-                    {card.title}
-                  </h3>
+                  <h3 className="ml-3 text-lg font-semibold text-gray-900">{card.title}</h3>
                 </div>
-                <p className="text-gray-600 text-sm">
-                  {card.description}
-                </p>
+                <p className="text-gray-600 text-sm">{card.description}</p>
               </motion.div>
             ))}
           </div>
@@ -346,205 +332,344 @@ export default function ManagerDashboard() {
 
         {/* Consultants Table */}
         {visibleSections.consultants && (
-        <div id="consultants-section" className="bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-6">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Consultants Récemment Ajoutés
-              </h2>
-              <motion.button
-                onClick={() => router.push('/manager/consultant/add')}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Plus className="h-4 w-4" />
-                <span>Ajouter Consultant</span>
-              </motion.button>
+          <div id="consultants-section" className="bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-6">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900">Liste des Consultants</h2>
+                <motion.button
+                  onClick={() => router.push('/manager/consultant/add')}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Ajouter Consultant</span>
+                </motion.button>
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Compétences</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Taux journalier</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {consultantsError ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-8 text-center">
+                        <div className="text-red-600">
+                          <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+                          <p>Erreur: {consultantsError}</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : consultants.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-8 text-center text-gray-500">Aucun consultant trouvé</td>
+                    </tr>
+                  ) : (
+                    consultants.map((consultant) => (
+                      <motion.tr key={consultant.id} className="hover:bg-gray-50" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                              <span className="text-blue-600 font-medium">{consultant.name.split(' ').map(n => n[0]).join('')}</span>
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">{consultant.name}</div>
+                              <div className="text-sm text-gray-500">{consultant.phone}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{consultant.email}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{consultant.skills || 'N/A'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                            {consultant.daily_rate ? `€${consultant.daily_rate}/jour` : 'N/A'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadgeColor(consultant.status)}`}>
+                            {consultant.status === 'active' ? 'Actif' : 'Inactif'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="flex space-x-2">
+                            <motion.button onClick={() => router.push(`/manager/consultant/${consultant.id}`)} className="text-blue-600 hover:text-blue-800" whileHover={{ scale: 1.1 }} title="Voir">
+                              <Eye className="h-4 w-4" />
+                            </motion.button>
+                            <motion.button onClick={() => router.push(`/manager/consultant/${consultant.id}/edit`)} className="text-gray-600 hover:text-gray-800" whileHover={{ scale: 1.1 }} title="Modifier">
+                              <Edit className="h-4 w-4" />
+                            </motion.button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
-          
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Nom
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Compétences
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Taux journalier
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Statut
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {consultantsError ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center">
-                      <div className="text-red-600">
-                        <AlertCircle className="h-8 w-8 mx-auto mb-2" />
-                        <p>Erreur: {consultantsError}</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : consultants.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
-                      Aucun consultant trouvé
-                    </td>
-                  </tr>
-                ) : (
-                  consultants.slice(0, 5).map((consultant) => (
-                    <motion.tr 
-                      key={consultant.id}
-                      className="hover:bg-gray-50"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                            <span className="text-blue-600 font-medium">
-                              {consultant.name.split(' ').map(n => n[0]).join('')}
-                            </span>
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">
-                              {consultant.name}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {consultant.phone}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {consultant.email}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {consultant.skills || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                          {consultant.daily_rate ? `€${consultant.daily_rate}/jour` : 'N/A'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadgeColor(consultant.status)}`}>
-                          {consultant.status === 'active' ? 'Actif' : 'Inactif'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <div className="flex space-x-2">
-                          <motion.button
-                            onClick={() => router.push(`/client/users/${consultant.id}`)}
-                            className="text-blue-600 hover:text-blue-800 transition-colors"
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            title="Voir les détails"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </motion.button>
-                          <motion.button
-                            onClick={() => router.push(`/client/users/${consultant.id}/edit`)}
-                            className="text-gray-600 hover:text-gray-800 transition-colors"
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            title="Modifier"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </motion.button>
-                        </div>
-                      </td>
-                    </motion.tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
         )}
 
-        {/* Placeholder sections pour RH, Comptables, Projets */}
+        {/* RH Section */}
         {visibleSections.rh && (
-        <div id="rh-section" className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-6">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-900">Liste des RH</h2>
-              <motion.button
-                onClick={() => router.push('/manager/rh/add')}
-                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Plus className="h-4 w-4" />
-                <span>Ajouter RH</span>
-              </motion.button>
+          <div id="rh-section" className="bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-6">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900">Liste des RH</h2>
+                <motion.button
+                  onClick={() => router.push('/manager/rh/add')}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Ajouter RH</span>
+                </motion.button>
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Téléphone</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rôle</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {rhError ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center">
+                        <div className="text-red-600">
+                          <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+                          <p>Erreur: {rhError}</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : rhList.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center text-gray-500">Aucun RH trouvé</td>
+                    </tr>
+                  ) : (
+                    rhList.map((rh) => (
+                      <motion.tr key={rh.id} className="hover:bg-gray-50" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
+                              <span className="text-green-600 font-medium">{rh.name.split(' ').map(n => n[0]).join('')}</span>
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">{rh.name}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rh.email}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rh.phone || 'N/A'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">{rh.role}</span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="flex space-x-2">
+                            <motion.button onClick={() => router.push(`/manager/rh/${rh.id}`)} className="text-green-600 hover:text-green-800" whileHover={{ scale: 1.1 }} title="Voir">
+                              <Eye className="h-4 w-4" />
+                            </motion.button>
+                            <motion.button onClick={() => router.push(`/manager/rh/${rh.id}/edit`)} className="text-gray-600 hover:text-gray-800" whileHover={{ scale: 1.1 }} title="Modifier">
+                              <Edit className="h-4 w-4" />
+                            </motion.button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
-          <div className="p-6">
-            <p className="text-gray-500 text-center py-8">Section en cours de développement</p>
-          </div>
-        </div>
         )}
 
+        {/* Comptables Section */}
         {visibleSections.comptables && (
-        <div id="comptables-section" className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-6">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-900">Liste des Comptables</h2>
-              <motion.button
-                onClick={() => router.push('/manager/comptable/add')}
-                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Plus className="h-4 w-4" />
-                <span>Ajouter Comptable</span>
-              </motion.button>
+          <div id="comptables-section" className="bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-6">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900">Liste des Comptables</h2>
+                <motion.button
+                  onClick={() => router.push('/manager/comptable/add')}
+                  className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Ajouter Comptable</span>
+                </motion.button>
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Téléphone</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rôle</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {comptablesError ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center">
+                        <div className="text-red-600">
+                          <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+                          <p>Erreur: {comptablesError}</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : comptables.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center text-gray-500">Aucun comptable trouvé</td>
+                    </tr>
+                  ) : (
+                    comptables.map((comptable) => (
+                      <motion.tr key={comptable.id} className="hover:bg-gray-50" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="h-10 w-10 rounded-full bg-purple-100 flex items-center justify-center">
+                              <span className="text-purple-600 font-medium">{comptable.name.split(' ').map(n => n[0]).join('')}</span>
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">{comptable.name}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{comptable.email}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{comptable.phone || 'N/A'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">{comptable.role}</span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="flex space-x-2">
+                            <motion.button onClick={() => router.push(`/manager/comptable/${comptable.id}`)} className="text-purple-600 hover:text-purple-800" whileHover={{ scale: 1.1 }} title="Voir">
+                              <Eye className="h-4 w-4" />
+                            </motion.button>
+                            <motion.button onClick={() => router.push(`/manager/comptable/${comptable.id}/edit`)} className="text-gray-600 hover:text-gray-800" whileHover={{ scale: 1.1 }} title="Modifier">
+                              <Edit className="h-4 w-4" />
+                            </motion.button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
-          <div className="p-6">
-            <p className="text-gray-500 text-center py-8">Section en cours de développement</p>
-          </div>
-        </div>
         )}
 
+        {/* Projects Section */}
         {visibleSections.projects && (
-        <div id="projects-section" className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-6">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-900">Liste des Projets</h2>
-              <motion.button
-                onClick={() => router.push('/client/projects/add')}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center space-x-2"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Plus className="h-4 w-4" />
-                <span>Ajouter Projet</span>
-              </motion.button>
+          <div id="projects-section" className="bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-6">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900">Liste des Projets</h2>
+                <motion.button
+                  onClick={() => router.push('/manager/projects/add')}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center space-x-2"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Ajouter Projet</span>
+                </motion.button>
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom du projet</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date de début</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date de fin</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {projectsError ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-8 text-center">
+                        <div className="text-red-600">
+                          <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+                          <p>Erreur: {projectsError}</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : projects.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-8 text-center text-gray-500">Aucun projet trouvé</td>
+                    </tr>
+                  ) : (
+                    projects.map((project) => {
+                      const status = project.end_date ? 'Terminé' : (project.start_date ? 'Actif' : 'En attente')
+                      const statusColor = project.end_date ? 'bg-gray-100 text-gray-800' : (project.start_date ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800')
+                      
+                      return (
+                        <motion.tr key={project.id} className="hover:bg-gray-50" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center">
+                              <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                                <Briefcase className="h-5 w-5 text-indigo-600" />
+                              </div>
+                              <div className="ml-4">
+                                <div className="text-sm font-medium text-gray-900">{project.name}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">{project.description || 'N/A'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {project.start_date ? new Date(project.start_date).toLocaleDateString('fr-FR') : 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {project.end_date ? new Date(project.end_date).toLocaleDateString('fr-FR') : 'En cours'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusColor}`}>{status}</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <div className="flex space-x-2">
+                              <motion.button onClick={() => router.push(`/manager/projects/${project.id}`)} className="text-indigo-600 hover:text-indigo-800" whileHover={{ scale: 1.1 }} title="Voir">
+                                <Eye className="h-4 w-4" />
+                              </motion.button>
+                              <motion.button onClick={() => router.push(`/manager/projects/${project.id}/edit`)} className="text-gray-600 hover:text-gray-800" whileHover={{ scale: 1.1 }} title="Modifier">
+                                <Edit className="h-4 w-4" />
+                              </motion.button>
+                            </div>
+                          </td>
+                        </motion.tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
-          <div className="p-6">
-            <p className="text-gray-500 text-center py-8">Section en cours de développement</p>
-          </div>
-        </div>
         )}
       </main>
     </div>
   )
 }
-
