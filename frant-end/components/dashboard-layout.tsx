@@ -4,10 +4,10 @@ import type React from "react"
 
 import { useState } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { LayoutDashboard, Users, UserCheck, FileText, CreditCard, Bell, Menu, X, Shield } from "lucide-react"
+import { LayoutDashboard, Users, UserCheck, FileText, CreditCard, Bell, Menu, X, Shield, LogOut } from "lucide-react"
 
 const sidebarItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -26,6 +26,16 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const pathname = usePathname()
+  const router = useRouter()
+
+  const handleLogout = () => {
+    // Supprimer les tokens d'authentification
+    localStorage.removeItem("authToken")
+    localStorage.removeItem("userType")
+    localStorage.removeItem("userData")
+    // Rediriger vers la page de connexion
+    router.push("/login")
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -92,8 +102,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           </div>
 
           <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm">
-              Settings
+            <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
+              <LogOut className="h-4 w-4" />
+              Déconnecter
             </Button>
             <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
               <span className="text-sm font-medium text-foreground">U</span>
