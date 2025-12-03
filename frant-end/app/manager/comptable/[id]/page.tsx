@@ -3,6 +3,9 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
+import { useAuth } from '@/hooks/use-auth'
+import { ComptableAPI, invalidateCache } from '@/lib/api'
+import type { Comptable } from '@/lib/type'
 import { 
   ArrowLeft, 
   Edit, 
@@ -17,17 +20,23 @@ import {
   Loader2,
   Building
 } from 'lucide-react'
-import { ComptableAPI } from '@/lib/api'
-import type { Comptable } from '@/lib/type'
 
 export default function ComptableDetailsPage() {
   const router = useRouter()
   const params = useParams()
+  const { user, loading: authLoading, isAuthenticated } = useAuth()
   const [isLoading, setIsLoading] = useState(true)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [comptable, setComptable] = useState<Comptable | null>(null)
+
+  // Redirection si pas authentifié
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push('/login')
+    }
+  }, [authLoading, isAuthenticated, router])
 
   // Fetch Comptable data from API
   useEffect(() => {
@@ -51,15 +60,15 @@ export default function ComptableDetailsPage() {
       }
     }
 
-    if (params.id) {
+    if (params.id && !authLoading && isAuthenticated) {
       fetchComptableData()
     }
-  }, [params.id])
+  }, [params.id, authLoading, isAuthenticated])
 
   // Action handlers
   const handleEditComptable = () => {
     if (comptable) {
-      router.push(`/client/comptable/${comptable.id}/edit`)
+      router.push(`/manager/comptable/${comptable.id}/edit`)
     }
   }
 
@@ -69,8 +78,9 @@ export default function ComptableDetailsPage() {
     setIsDeleting(true)
     try {
       await ComptableAPI.delete(comptable.id)
+      invalidateCache('/comptables')
       setShowDeleteModal(false)
-      router.push('/client/dashboard')
+      router.push('/manager/dashboard')
     } catch (error: any) {
       console.error('Error deleting comptable:', error)
       setError(error.response?.data?.message || 'Erreur lors de la suppression')
@@ -79,8 +89,13 @@ export default function ComptableDetailsPage() {
     }
   }
 
+  // Si pas authentifié, ne rien afficher pendant la redirection
+  if (!authLoading && !isAuthenticated) {
+    return null
+  }
+
   // Show loading state
-  if (isLoading) {
+  if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -127,7 +142,7 @@ export default function ComptableDetailsPage() {
               </motion.button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">{comptable.name}</h1>
-                <p className="text-gray-600">Détails du comptable</p>
+                <p className="text-gray-600">Détails du Comptable</p>
               </div>
             </div>
             
@@ -135,7 +150,7 @@ export default function ComptableDetailsPage() {
             <div className="flex space-x-3">
               <motion.button
                 onClick={handleEditComptable}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
@@ -229,6 +244,14 @@ export default function ComptableDetailsPage() {
                 </div>
                 
                 <div className="flex items-center space-x-3">
+                  <MapPin className="h-5 w-5 text-gray-400" />
+                  <div>
+                    <p className="text-sm text-gray-600">Adresse</p>
+                    <p className="font-medium text-gray-900">{comptable.address || 'Non renseignée'}</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-3">
                   <Calendar className="h-5 w-5 text-gray-400" />
                   <div>
                     <p className="text-sm text-gray-600">Date de création</p>
@@ -270,6 +293,40 @@ export default function ComptableDetailsPage() {
                 </div>
               </div>
             </motion.div>
+
+            {/* Client Info */}
+            {comptable.client && (
+              <motion.div 
+                className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.3 }}
+              >
+                <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                  <Building className="h-5 w-5 text-purple-600 mr-2" />
+                  Entreprise
+                </h2>
+                
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Nom de l'entreprise</p>
+                    <p className="font-medium text-gray-900">{comptable.client.company_name}</p>
+                  </div>
+                  {comptable.client.contact_name && (
+                    <div>
+                      <p className="text-sm text-gray-600">Contact</p>
+                      <p className="font-medium text-gray-900">{comptable.client.contact_name}</p>
+                    </div>
+                  )}
+                  {comptable.client.contact_email && (
+                    <div>
+                      <p className="text-sm text-gray-600">Email</p>
+                      <p className="font-medium text-gray-900">{comptable.client.contact_email}</p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
           </div>
         </div>
       </main>
@@ -311,10 +368,3 @@ export default function ComptableDetailsPage() {
     </div>
   )
 }
-
-
-
-
-
-
-

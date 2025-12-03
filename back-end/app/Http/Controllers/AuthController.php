@@ -148,6 +148,7 @@ class AuthController extends Controller
 
     /**
      * Détecte automatiquement le type d'utilisateur basé sur son email
+     * Note: L'ordre est important - les rôles plus spécifiques sont vérifiés en premier
      */
     private function detectUserType(string $email): ?string
     {
@@ -165,12 +166,13 @@ class AuthController extends Controller
             return 'manager';
         }
         
-        if (Rh::where('email', $email)->exists()) {
-            return 'rh';
-        }
-        
+        // Comptable AVANT RH pour éviter les conflits d'email
         if (Comptable::where('email', $email)->exists()) {
             return 'comptable';
+        }
+        
+        if (Rh::where('email', $email)->exists()) {
+            return 'rh';
         }
         
         if (Consultant::where('email', $email)->exists()) {

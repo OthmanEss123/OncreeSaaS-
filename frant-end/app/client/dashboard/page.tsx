@@ -9,6 +9,7 @@ import { useProjects } from '@/hooks/use-projects'
 import { useManagers } from '@/hooks/use-managers'
 import { useRh } from '@/hooks/use-rh'
 import { useComptables } from '@/hooks/use-comptables'
+import { ConsultantAPI, ManagerAPI, RhAPI, ComptableAPI, ProjectAPI, invalidateCache } from '@/lib/api'
 import { 
   Users, 
   Briefcase, 
@@ -46,11 +47,11 @@ interface ClientStats {
 export default function ClientDashboard() {
   const router = useRouter()
   const { user, loading: authLoading, isAuthenticated, logout } = useAuth()
-  const { consultants: allConsultants, loading: consultantsLoading, error: consultantsError } = useConsultants()
-  const { projects: allProjects, loading: projectsLoading, error: projectsError } = useProjects()
-  const { managers: allManagers, loading: managersLoading, error: managersError } = useManagers()
-  const { rhList: allRh, loading: rhLoading, error: rhError } = useRh()
-  const { comptables: allComptables, loading: comptablesLoading, error: comptablesError } = useComptables()
+  const { consultants: allConsultants, loading: consultantsLoading, error: consultantsError, refetch: refetchConsultants } = useConsultants()
+  const { projects: allProjects, loading: projectsLoading, error: projectsError, refetch: refetchProjects } = useProjects()
+  const { managers: allManagers, loading: managersLoading, error: managersError, refetch: refetchManagers } = useManagers()
+  const { rhList: allRh, loading: rhLoading, error: rhError, refetch: refetchRh } = useRh()
+  const { comptables: allComptables, loading: comptablesLoading, error: comptablesError, refetch: refetchComptables } = useComptables()
   
   // State pour gérer la visibilité des sections
   const [visibleSections, setVisibleSections] = useState({
@@ -60,6 +61,15 @@ export default function ClientDashboard() {
     comptables: false,
     projects: false
   })
+
+  // State pour la modal de suppression
+  const [deleteModal, setDeleteModal] = useState<{
+    show: boolean
+    type: 'consultant' | 'manager' | 'rh' | 'comptable' | 'project' | null
+    id: number | null
+    name: string
+  }>({ show: false, type: null, id: null, name: '' })
+  const [isDeleting, setIsDeleting] = useState(false)
   
   // State for client statistics
   const [stats, setStats] = useState<ClientStats>({
@@ -126,6 +136,53 @@ export default function ClientDashboard() {
       router.push('/login')
     }
   }, [authLoading, isAuthenticated, router])
+
+  // Fonction de suppression
+  const handleDelete = async () => {
+    if (!deleteModal.type || !deleteModal.id) return
+
+    setIsDeleting(true)
+    try {
+      switch (deleteModal.type) {
+        case 'consultant':
+          await ConsultantAPI.delete(deleteModal.id)
+          invalidateCache('/consultants')
+          await refetchConsultants()
+          break
+        case 'manager':
+          await ManagerAPI.delete(deleteModal.id)
+          invalidateCache('/managers')
+          await refetchManagers()
+          break
+        case 'rh':
+          await RhAPI.delete(deleteModal.id)
+          invalidateCache('/rh')
+          await refetchRh()
+          break
+        case 'comptable':
+          await ComptableAPI.delete(deleteModal.id)
+          invalidateCache('/comptables')
+          await refetchComptables()
+          break
+        case 'project':
+          await ProjectAPI.delete(deleteModal.id)
+          invalidateCache('/projects')
+          await refetchProjects()
+          break
+      }
+      setDeleteModal({ show: false, type: null, id: null, name: '' })
+    } catch (error: any) {
+      console.error('Erreur lors de la suppression:', error)
+      alert(error.response?.data?.message || 'Erreur lors de la suppression')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  // Ouvrir la modal de suppression
+  const openDeleteModal = (type: 'consultant' | 'manager' | 'rh' | 'comptable' | 'project', id: number, name: string) => {
+    setDeleteModal({ show: true, type, id, name })
+  }
 
   // Si pas authentifié, ne rien afficher pendant la redirection
   if (!authLoading && !isAuthenticated) {
@@ -518,12 +575,7 @@ export default function ClientDashboard() {
                             <Edit className="h-4 w-4" />
                           </motion.button>
                           <motion.button
-                            onClick={() => {
-                              if (confirm('Êtes-vous sûr de vouloir supprimer ce consultant ?')) {
-                                // TODO: API call to delete consultant
-                                console.log('Delete consultant:', consultant.id)
-                              }
-                            }}
+                            onClick={() => openDeleteModal('consultant', consultant.id, consultant.name)}
                             className="text-red-600 hover:text-red-800 transition-colors"
                             whileHover={{ scale: 1.1 }}
                             whileTap={{ scale: 0.9 }}
@@ -652,12 +704,7 @@ export default function ClientDashboard() {
                             <Edit className="h-4 w-4" />
                           </motion.button>
                           <motion.button
-                            onClick={() => {
-                              if (confirm('Êtes-vous sûr de vouloir supprimer ce manager ?')) {
-                                // TODO: API call to delete manager
-                                console.log('Delete manager:', manager.id)
-                              }
-                            }}
+                            onClick={() => openDeleteModal('manager', manager.id, manager.name)}
                             className="text-red-600 hover:text-red-800 transition-colors"
                             whileHover={{ scale: 1.1 }}
                             whileTap={{ scale: 0.9 }}
@@ -786,12 +833,7 @@ export default function ClientDashboard() {
                             <Edit className="h-4 w-4" />
                           </motion.button>
                           <motion.button
-                            onClick={() => {
-                              if (confirm('Êtes-vous sûr de vouloir supprimer ce RH ?')) {
-                                // TODO: API call to delete RH
-                                console.log('Delete RH:', rh.id)
-                              }
-                            }}
+                            onClick={() => openDeleteModal('rh', rh.id, rh.name)}
                             className="text-red-600 hover:text-red-800 transition-colors"
                             whileHover={{ scale: 1.1 }}
                             whileTap={{ scale: 0.9 }}
@@ -920,12 +962,7 @@ export default function ClientDashboard() {
                             <Edit className="h-4 w-4" />
                           </motion.button>
                           <motion.button
-                            onClick={() => {
-                              if (confirm('Êtes-vous sûr de vouloir supprimer ce comptable ?')) {
-                                // TODO: API call to delete comptable
-                                console.log('Delete comptable:', comptable.id)
-                              }
-                            }}
+                            onClick={() => openDeleteModal('comptable', comptable.id, comptable.name)}
                             className="text-red-600 hover:text-red-800 transition-colors"
                             whileHover={{ scale: 1.1 }}
                             whileTap={{ scale: 0.9 }}
@@ -1063,6 +1100,15 @@ export default function ClientDashboard() {
                             >
                               <Edit className="h-4 w-4" />
                             </motion.button>
+                            <motion.button
+                              onClick={() => openDeleteModal('project', project.id, project.name)}
+                              className="text-red-600 hover:text-red-800 transition-colors"
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                              title="Supprimer"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </motion.button>
                           </div>
                         </td>
                       </motion.tr>
@@ -1075,6 +1121,55 @@ export default function ClientDashboard() {
         </div>
         )}
       </main>
+
+      {/* Modal de suppression */}
+      {deleteModal.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <motion.div 
+            className="bg-white rounded-lg p-6 max-w-md w-full mx-4"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="flex items-center space-x-3 mb-4">
+              <AlertCircle className="h-6 w-6 text-red-600" />
+              <h3 className="text-lg font-semibold text-gray-900">
+                Confirmer la suppression
+              </h3>
+            </div>
+            <p className="text-gray-600 mb-6">
+              Êtes-vous sûr de vouloir supprimer <strong>{deleteModal.name}</strong> ? 
+              Cette action est irréversible.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setDeleteModal({ show: false, type: null, id: null, name: '' })}
+                disabled={isDeleting}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center space-x-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Suppression...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    <span>Supprimer</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   )
 }

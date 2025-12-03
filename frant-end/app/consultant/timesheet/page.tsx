@@ -808,7 +808,7 @@ export default function TimesheetPage() {
     if (isAlreadySaved) {
       showWarning(
         'Période déjà enregistrée',
-        `Cette période (${period === 'morning' ? 'Matin' : 'Soir'} du ${date.toLocaleDateString('fr-FR')}) a déjà été enregistrée. Pour la modifier, utilisez le bouton "Modifier" dans le dashboard.`
+        `Cette période (${period === 'morning' ? 'Avant-midi' : 'Après-midi'} du ${date.toLocaleDateString('fr-FR')}) a déjà été enregistrée. Pour la modifier, utilisez le bouton "Modifier" dans le dashboard.`
       )
       return
     }
@@ -848,7 +848,7 @@ export default function TimesheetPage() {
     
     if (morningAlreadySaved || eveningAlreadySaved) {
       const periodsText = morningAlreadySaved && eveningAlreadySaved 
-        ? 'Les deux périodes (Matin et Soir)'
+        ? 'Les deux périodes (Avant-midi et Après-midi)'
         : morningAlreadySaved 
           ? 'La période du matin'
           : 'La période du soir'
@@ -2354,7 +2354,7 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
                         
                         if (bothPeriodsAlreadySaved) {
                           showWarning('Jour déjà enregistré', 
-                            `Les deux périodes (Matin et Soir) de ce jour (${day.getDate()}/${day.getMonth() + 1}/${day.getFullYear()}) ont déjà été enregistrées dans la base de données.`)
+                            `Les deux périodes (Avant-midi et Après-midi) de ce jour (${day.getDate()}/${day.getMonth() + 1}/${day.getFullYear()}) ont déjà été enregistrées dans la base de données.`)
                           return
                         }
                         
@@ -2411,7 +2411,7 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
                                                            (morningLeaveTypeSaved && eveningLeaveTypeSaved)
                               
                               if (bothPeriodsAlreadySaved) {
-                                return `Les deux périodes (Matin et Soir) de ce jour (${day.getDate()}/${day.getMonth() + 1}/${day.getFullYear()}) ont déjà été enregistrées dans la base de données.`
+                                return `Les deux périodes (Avant-midi et Après-midi) de ce jour (${day.getDate()}/${day.getMonth() + 1}/${day.getFullYear()}) ont déjà été enregistrées dans la base de données.`
                               }
                               
                               return "Cliquer pour sélectionner/désélectionner toute la journée"
@@ -2486,14 +2486,14 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
                                     ? `Congé: ${leaveTypes.find(lt => lt.id === morningEntry?.leaveType)?.name}`
                                     : morningIsWorkType
                                     ? `Travail: ${workTypes.find(wt => wt.id === morningEntry?.workType)?.name}`
-                                    : 'Période matin'
+                                    : 'Avant-midi'
                                 }
                               >
                                 <Sun className="h-3 w-3" />
-                                <span>M</span>
+                                <span>AVM</span>
                               </motion.button>
                               
-                              {/* Evening period */}
+                              {/* Afternoon period */}
                               <motion.button
                                 onClick={() => !isInOtherCalendar && !isTooFarFuture && !eveningAlreadySaved && !eveningWorkTypeSaved && !eveningLeaveTypeSaved && handleDayPeriodClick(day, 'evening')}
                                 disabled={isInOtherCalendar || isTooFarFuture || eveningAlreadySaved || eveningWorkTypeSaved || eveningLeaveTypeSaved}
@@ -2529,11 +2529,11 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
                                     ? `Congé: ${leaveTypes.find(lt => lt.id === eveningEntry?.leaveType)?.name}`
                                     : eveningIsWorkType
                                     ? `Travail: ${workTypes.find(wt => wt.id === eveningEntry?.workType)?.name}`
-                                    : 'Période soir'
+                                    : 'Période après-midi'
                                 }
                               >
                                 <Moon className="h-3 w-3" />
-                                <span>S</span>
+                                <span>APM</span>
                               </motion.button>
                             </>
                           )
@@ -2553,11 +2553,11 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="flex items-center space-x-2">
                   <div className="w-4 h-4 bg-yellow-500 rounded"></div>
-                  <span>Matin sélectionné</span>
+                  <span>Avant-midi (AVM) sélectionné</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                  <span>après midi sélectionné</span>
+                  <span>Après-midi (APM) sélectionné</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <div className="w-4 h-4 bg-purple-500 rounded"></div>
@@ -2901,13 +2901,13 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
                                   }`}
                                   whileHover={!isConflicted ? { scale: 1.05 } : {}}
                                   whileTap={!isConflicted ? { scale: 0.95 } : {}}
-                                  title={isConflicted ? 'Jour déjà utilisé' : 'Période matin'}
+                                  title={isConflicted ? 'Jour déjà utilisé' : 'Avant-midi'}
                                 >
                                   <Sun className="h-3 w-3" />
-                                  <span>M</span>
+                                  <span>AVM</span>
                                 </motion.button>
                                 
-                                {/* Evening period */}
+                                {/* Afternoon period */}
                                 <motion.button
                                   onClick={() => !isConflicted && handleWorkTypeDayPeriodClick(day, 'evening')}
                                   disabled={isConflicted}
@@ -2926,10 +2926,10 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
                                   }`}
                                   whileHover={!isConflicted ? { scale: 1.05 } : {}}
                                   whileTap={!isConflicted ? { scale: 0.95 } : {}}
-                                  title={isConflicted ? 'Jour déjà utilisé' : 'Période soir'}
+                                  title={isConflicted ? 'Jour déjà utilisé' : 'Après-midi'}
                                 >
                                   <Moon className="h-3 w-3" />
-                                  <span>S</span>
+                                  <span>APM</span>
                                 </motion.button>
                               </div>
                             </div>
@@ -2958,7 +2958,7 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
                               >
                                 {formatDate(new Date(dp.date))}
                                 {dp.period === 'morning' ? <Sun className="h-3 w-3" /> : <Moon className="h-3 w-3" />}
-                                <span className="text-xs">({dp.period === 'morning' ? 'M' : 'S'})</span>
+                                <span className="text-xs">({dp.period === 'morning' ? 'AVM' : 'APM'})</span>
                               </span>
                             ))}
                           </div>
@@ -3229,13 +3229,13 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
                                   }`}
                                   whileHover={!isConflicted ? { scale: 1.05 } : {}}
                                   whileTap={!isConflicted ? { scale: 0.95 } : {}}
-                                  title={isConflicted ? 'Jour déjà utilisé' : 'Période matin'}
+                                  title={isConflicted ? 'Jour déjà utilisé' : 'Avant-midi'}
                                 >
                                   <Sun className="h-3 w-3" />
-                                  <span>M</span>
+                                  <span>AVM</span>
                                 </motion.button>
                                 
-                                {/* Evening period */}
+                                {/* Afternoon period */}
                                 <motion.button
                                   onClick={() => !isConflicted && handleLeaveDayPeriodClick(day, 'evening')}
                                   disabled={isConflicted}
@@ -3254,10 +3254,10 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
                                   }`}
                                   whileHover={!isConflicted ? { scale: 1.05 } : {}}
                                   whileTap={!isConflicted ? { scale: 0.95 } : {}}
-                                  title={isConflicted ? 'Jour déjà utilisé' : 'Période soir'}
+                                  title={isConflicted ? 'Jour déjà utilisé' : 'Après-midi'}
                                 >
                                   <Moon className="h-3 w-3" />
-                                  <span>S</span>
+                                  <span>APM</span>
                                 </motion.button>
                               </div>
                             </div>
@@ -3286,7 +3286,7 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
                               >
                                 {formatDate(new Date(dp.date))}
                                 {dp.period === 'morning' ? <Sun className="h-3 w-3" /> : <Moon className="h-3 w-3" />}
-                                <span className="text-xs">({dp.period === 'morning' ? 'M' : 'S'})</span>
+                                <span className="text-xs">({dp.period === 'morning' ? 'AVM' : 'APM'})</span>
                               </span>
                             ))}
                           </div>

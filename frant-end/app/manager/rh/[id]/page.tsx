@@ -3,6 +3,9 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
+import { useAuth } from '@/hooks/use-auth'
+import { RhAPI, invalidateCache } from '@/lib/api'
+import type { Rh } from '@/lib/type'
 import { 
   ArrowLeft, 
   Edit, 
@@ -11,80 +14,92 @@ import {
   Mail, 
   Phone,
   MapPin,
-  Calculator,
+  UserCheck,
   Calendar,
   AlertTriangle,
   Loader2,
   Building
 } from 'lucide-react'
-import { ComptableAPI } from '@/lib/api'
-import type { Comptable } from '@/lib/type'
 
-export default function ComptableDetailsPage() {
+export default function RhDetailsPage() {
   const router = useRouter()
   const params = useParams()
+  const { user, loading: authLoading, isAuthenticated } = useAuth()
   const [isLoading, setIsLoading] = useState(true)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [comptable, setComptable] = useState<Comptable | null>(null)
+  const [rh, setRh] = useState<Rh | null>(null)
 
-  // Fetch Comptable data from API
+  // Redirection si pas authentifié
   useEffect(() => {
-    const fetchComptableData = async () => {
+    if (!authLoading && !isAuthenticated) {
+      router.push('/login')
+    }
+  }, [authLoading, isAuthenticated, router])
+
+  // Fetch RH data from API
+  useEffect(() => {
+    const fetchRhData = async () => {
       try {
         setIsLoading(true)
         setError(null)
         
-        const comptableId = parseInt(params.id as string)
-        if (isNaN(comptableId)) {
-          throw new Error('ID de comptable invalide')
+        const rhId = parseInt(params.id as string)
+        if (isNaN(rhId)) {
+          throw new Error('ID de RH invalide')
         }
 
-        const response = await ComptableAPI.get(comptableId)
-        setComptable(response.data || response)
+        const response = await RhAPI.get(rhId)
+        setRh(response.data || response)
       } catch (err: any) {
-        console.error('Erreur lors du chargement du comptable:', err)
+        console.error('Erreur lors du chargement du RH:', err)
         setError(err.response?.data?.message || err.message || 'Erreur lors du chargement des données')
       } finally {
         setIsLoading(false)
       }
     }
 
-    if (params.id) {
-      fetchComptableData()
+    if (params.id && !authLoading && isAuthenticated) {
+      fetchRhData()
     }
-  }, [params.id])
+  }, [params.id, authLoading, isAuthenticated])
 
   // Action handlers
-  const handleEditComptable = () => {
-    if (comptable) {
-      router.push(`/client/comptable/${comptable.id}/edit`)
+  const handleEditRh = () => {
+    if (rh) {
+      router.push(`/manager/rh/${rh.id}/edit`)
     }
   }
 
-  const handleDeleteComptable = async () => {
-    if (!comptable) return
+  const handleDeleteRh = async () => {
+    if (!rh) return
     
     setIsDeleting(true)
     try {
-      await ComptableAPI.delete(comptable.id)
+      await RhAPI.delete(rh.id)
+      invalidateCache('/rh')
       setShowDeleteModal(false)
-      router.push('/client/dashboard')
+      router.push('/manager/dashboard')
     } catch (error: any) {
-      console.error('Error deleting comptable:', error)
+      console.error('Error deleting RH:', error)
       setError(error.response?.data?.message || 'Erreur lors de la suppression')
     } finally {
       setIsDeleting(false)
     }
   }
 
+  // Si pas authentifié, ne rien afficher pendant la redirection
+  if (!authLoading && !isAuthenticated) {
+    return null
+  }
+
   // Show loading state
-  if (isLoading) {
+  if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-purple-600 mx-auto mb-4" />
+          <Loader2 className="h-8 w-8 animate-spin text-green-600 mx-auto mb-4" />
           <p className="text-gray-600">Chargement des données...</p>
         </div>
       </div>
@@ -92,16 +107,16 @@ export default function ComptableDetailsPage() {
   }
 
   // Show error state
-  if (error || !comptable) {
+  if (error || !rh) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-4">
           <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Erreur</h2>
-          <p className="text-gray-600 mb-6">{error || 'Comptable introuvable'}</p>
+          <p className="text-gray-600 mb-6">{error || 'RH introuvable'}</p>
           <button
             onClick={() => router.back()}
-            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
           >
             Retour
           </button>
@@ -126,16 +141,16 @@ export default function ComptableDetailsPage() {
                 <ArrowLeft className="h-5 w-5 text-gray-600" />
               </motion.button>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">{comptable.name}</h1>
-                <p className="text-gray-600">Détails du comptable</p>
+                <h1 className="text-2xl font-bold text-gray-900">{rh.name}</h1>
+                <p className="text-gray-600">Détails du Responsable RH</p>
               </div>
             </div>
             
             {/* Action Buttons */}
             <div className="flex space-x-3">
               <motion.button
-                onClick={handleEditComptable}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                onClick={handleEditRh}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
@@ -161,7 +176,7 @@ export default function ComptableDetailsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Comptable Overview */}
+            {/* RH Overview */}
             <motion.div 
               className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
               initial={{ opacity: 0, y: 20 }}
@@ -169,29 +184,29 @@ export default function ComptableDetailsPage() {
               transition={{ duration: 0.3 }}
             >
               <div className="flex items-start space-x-6">
-                <div className="w-24 h-24 bg-purple-100 rounded-full flex items-center justify-center">
-                  <span className="text-purple-600 font-bold text-2xl">
-                    {comptable.name.split(' ').map(n => n[0]).join('')}
+                <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center">
+                  <span className="text-green-600 font-bold text-2xl">
+                    {rh.name.split(' ').map(n => n[0]).join('')}
                   </span>
                 </div>
                 
                 <div className="flex-1">
                   <div className="flex items-center space-x-3 mb-4">
-                    <h2 className="text-2xl font-bold text-gray-900">{comptable.name}</h2>
-                    <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
-                      {comptable.role}
+                    <h2 className="text-2xl font-bold text-gray-900">{rh.name}</h2>
+                    <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                      {rh.role}
                     </span>
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm text-gray-600">Rôle</p>
-                      <p className="font-medium text-gray-900">{comptable.role}</p>
+                      <p className="font-medium text-gray-900">{rh.role}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Date de création</p>
                       <p className="font-medium text-gray-900">
-                        {new Date(comptable.created_at).toLocaleDateString('fr-FR')}
+                        {new Date(rh.created_at).toLocaleDateString('fr-FR')}
                       </p>
                     </div>
                   </div>
@@ -207,7 +222,7 @@ export default function ComptableDetailsPage() {
               transition={{ duration: 0.3, delay: 0.1 }}
             >
               <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                <User className="h-5 w-5 text-purple-600 mr-2" />
+                <User className="h-5 w-5 text-green-600 mr-2" />
                 Informations de Contact
               </h2>
               
@@ -216,7 +231,7 @@ export default function ComptableDetailsPage() {
                   <Mail className="h-5 w-5 text-gray-400" />
                   <div>
                     <p className="text-sm text-gray-600">Email</p>
-                    <p className="font-medium text-gray-900">{comptable.email}</p>
+                    <p className="font-medium text-gray-900">{rh.email}</p>
                   </div>
                 </div>
                 
@@ -224,7 +239,15 @@ export default function ComptableDetailsPage() {
                   <Phone className="h-5 w-5 text-gray-400" />
                   <div>
                     <p className="text-sm text-gray-600">Téléphone</p>
-                    <p className="font-medium text-gray-900">{comptable.phone || 'Non renseigné'}</p>
+                    <p className="font-medium text-gray-900">{rh.phone || 'Non renseigné'}</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <MapPin className="h-5 w-5 text-gray-400" />
+                  <div>
+                    <p className="text-sm text-gray-600">Adresse</p>
+                    <p className="font-medium text-gray-900">{rh.address || 'Non renseignée'}</p>
                   </div>
                 </div>
                 
@@ -233,7 +256,7 @@ export default function ComptableDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600">Date de création</p>
                     <p className="font-medium text-gray-900">
-                      {new Date(comptable.created_at).toLocaleDateString('fr-FR')}
+                      {new Date(rh.created_at).toLocaleDateString('fr-FR')}
                     </p>
                   </div>
                 </div>
@@ -243,7 +266,7 @@ export default function ComptableDetailsPage() {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Comptable Info Card */}
+            {/* RH Info Card */}
             <motion.div 
               className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
               initial={{ opacity: 0, y: 20 }}
@@ -251,30 +274,64 @@ export default function ComptableDetailsPage() {
               transition={{ duration: 0.3, delay: 0.2 }}
             >
               <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                <Calculator className="h-5 w-5 text-purple-600 mr-2" />
+                <UserCheck className="h-5 w-5 text-green-600 mr-2" />
                 Informations
               </h2>
               
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">ID</span>
-                  <span className="font-medium text-gray-900">#{comptable.id}</span>
+                  <span className="font-medium text-gray-900">#{rh.id}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">Rôle</span>
-                  <span className="font-medium text-purple-600">{comptable.role}</span>
+                  <span className="font-medium text-green-600">{rh.role}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">Client ID</span>
-                  <span className="font-medium text-gray-900">#{comptable.client_id}</span>
+                  <span className="font-medium text-gray-900">#{rh.client_id}</span>
                 </div>
               </div>
             </motion.div>
+
+            {/* Client Info */}
+            {rh.client && (
+              <motion.div 
+                className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.3 }}
+              >
+                <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                  <Building className="h-5 w-5 text-green-600 mr-2" />
+                  Entreprise
+                </h2>
+                
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Nom de l'entreprise</p>
+                    <p className="font-medium text-gray-900">{rh.client.company_name}</p>
+                  </div>
+                  {rh.client.contact_name && (
+                    <div>
+                      <p className="text-sm text-gray-600">Contact</p>
+                      <p className="font-medium text-gray-900">{rh.client.contact_name}</p>
+                    </div>
+                  )}
+                  {rh.client.contact_email && (
+                    <div>
+                      <p className="text-sm text-gray-600">Email</p>
+                      <p className="font-medium text-gray-900">{rh.client.contact_email}</p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
           </div>
         </div>
       </main>
 
-      {/* Delete Comptable Modal */}
+      {/* Delete RH Modal */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <motion.div 
@@ -285,10 +342,10 @@ export default function ComptableDetailsPage() {
           >
             <div className="flex items-center space-x-3 mb-4">
               <AlertTriangle className="h-6 w-6 text-red-600" />
-              <h3 className="text-lg font-semibold text-gray-900">Supprimer le Comptable</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Supprimer le RH</h3>
             </div>
             <p className="text-gray-600 mb-6">
-              Êtes-vous sûr de vouloir supprimer {comptable.name} ? Cette action est irréversible.
+              Êtes-vous sûr de vouloir supprimer {rh.name} ? Cette action est irréversible.
             </p>
             <div className="flex justify-end space-x-3">
               <button
@@ -298,7 +355,7 @@ export default function ComptableDetailsPage() {
                 Annuler
               </button>
               <button
-                onClick={handleDeleteComptable}
+                onClick={handleDeleteRh}
                 disabled={isDeleting}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
               >
@@ -311,10 +368,3 @@ export default function ComptableDetailsPage() {
     </div>
   )
 }
-
-
-
-
-
-
-

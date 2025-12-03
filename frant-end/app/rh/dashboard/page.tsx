@@ -17,7 +17,9 @@ import {
   Calendar,
   AlertCircle,
   RefreshCw,
-  UserPlus
+  UserPlus,
+  Eye,
+  Edit
 } from 'lucide-react'
 
 export default function RHDashboard() {
@@ -261,6 +263,9 @@ export default function RHDashboard() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Taux Journalier
                         </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Actions
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="bg-card divide-y divide-border">
@@ -302,6 +307,28 @@ export default function RHDashboard() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-card-foreground">
                             {consultant.daily_rate ? `${consultant.daily_rate}€/jour` : '-'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <div className="flex items-center justify-center space-x-2">
+                              <motion.button
+                                onClick={() => router.push(`/rh/consultant/${consultant.id}`)}
+                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                title="Voir les détails"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </motion.button>
+                              <motion.button
+                                onClick={() => router.push(`/rh/consultant/${consultant.id}/edit`)}
+                                className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                title="Modifier"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </motion.button>
+                            </div>
                           </td>
                         </tr>
                       ))}

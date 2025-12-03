@@ -3,6 +3,9 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
+import { useAuth } from '@/hooks/use-auth'
+import { ConsultantAPI, invalidateCache } from '@/lib/api'
+import type { Consultant } from '@/lib/type'
 import { 
   ArrowLeft, 
   Edit, 
@@ -11,80 +14,95 @@ import {
   Mail, 
   Phone,
   MapPin,
-  Shield,
+  Briefcase,
   Calendar,
   AlertTriangle,
   Loader2,
-  Building
+  DollarSign,
+  CheckCircle,
+  XCircle,
+  Code
 } from 'lucide-react'
-import { ManagerAPI } from '@/lib/api'
-import type { Manager } from '@/lib/type'
 
-export default function ManagerDetailsPage() {
+export default function ConsultantDetailsPage() {
   const router = useRouter()
   const params = useParams()
+  const { user, loading: authLoading, isAuthenticated } = useAuth()
   const [isLoading, setIsLoading] = useState(true)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [manager, setManager] = useState<Manager | null>(null)
+  const [consultant, setConsultant] = useState<Consultant | null>(null)
 
-  // Fetch manager data from API
+  // Redirection si pas authentifié
   useEffect(() => {
-    const fetchManagerData = async () => {
+    if (!authLoading && !isAuthenticated) {
+      router.push('/login')
+    }
+  }, [authLoading, isAuthenticated, router])
+
+  // Fetch consultant data from API
+  useEffect(() => {
+    const fetchConsultantData = async () => {
       try {
         setIsLoading(true)
         setError(null)
         
-        const managerId = parseInt(params.id as string)
-        if (isNaN(managerId)) {
-          throw new Error('ID de manager invalide')
+        const consultantId = parseInt(params.id as string)
+        if (isNaN(consultantId)) {
+          throw new Error('ID de consultant invalide')
         }
 
-        const response = await ManagerAPI.get(managerId)
-        setManager(response.data || response)
+        const response = await ConsultantAPI.get(consultantId)
+        setConsultant(response)
       } catch (err: any) {
-        console.error('Erreur lors du chargement du manager:', err)
+        console.error('Erreur lors du chargement du consultant:', err)
         setError(err.response?.data?.message || err.message || 'Erreur lors du chargement des données')
       } finally {
         setIsLoading(false)
       }
     }
 
-    if (params.id) {
-      fetchManagerData()
+    if (params.id && !authLoading && isAuthenticated) {
+      fetchConsultantData()
     }
-  }, [params.id])
+  }, [params.id, authLoading, isAuthenticated])
 
   // Action handlers
-  const handleEditManager = () => {
-    if (manager) {
-      router.push(`/client/manager/${manager.id}/edit`)
+  const handleEditConsultant = () => {
+    if (consultant) {
+      router.push(`/manager/consultant/${consultant.id}/edit`)
     }
   }
 
-  const handleDeleteManager = async () => {
-    if (!manager) return
+  const handleDeleteConsultant = async () => {
+    if (!consultant) return
     
     setIsDeleting(true)
     try {
-      await ManagerAPI.delete(manager.id)
+      await ConsultantAPI.delete(consultant.id)
+      invalidateCache('/consultants')
       setShowDeleteModal(false)
-      router.push('/client/dashboard')
+      router.push('/manager/dashboard')
     } catch (error: any) {
-      console.error('Error deleting manager:', error)
+      console.error('Error deleting consultant:', error)
       setError(error.response?.data?.message || 'Erreur lors de la suppression')
     } finally {
       setIsDeleting(false)
     }
   }
 
+  // Si pas authentifié, ne rien afficher pendant la redirection
+  if (!authLoading && !isAuthenticated) {
+    return null
+  }
+
   // Show loading state
-  if (isLoading) {
+  if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-orange-600 mx-auto mb-4" />
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-gray-600">Chargement des données...</p>
         </div>
       </div>
@@ -92,22 +110,33 @@ export default function ManagerDetailsPage() {
   }
 
   // Show error state
-  if (error || !manager) {
+  if (error || !consultant) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-4">
           <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Erreur</h2>
-          <p className="text-gray-600 mb-6">{error || 'Manager introuvable'}</p>
+          <p className="text-gray-600 mb-6">{error || 'Consultant introuvable'}</p>
           <button
             onClick={() => router.back()}
-            className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
           >
             Retour
           </button>
         </div>
       </div>
     )
+  }
+
+  // Parse skills
+  let skillsArray: string[] = []
+  if (consultant.skills) {
+    try {
+      const parsed = JSON.parse(consultant.skills)
+      skillsArray = Array.isArray(parsed) ? parsed : [consultant.skills]
+    } catch {
+      skillsArray = consultant.skills.split(',').map(s => s.trim()).filter(s => s.length > 0)
+    }
   }
 
   return (
@@ -126,15 +155,17 @@ export default function ManagerDetailsPage() {
                 <ArrowLeft className="h-5 w-5 text-gray-600" />
               </motion.button>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">{manager.name}</h1>
-                <p className="text-gray-600">Détails du manager</p>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  {consultant.name || `${consultant.first_name} ${consultant.last_name}`}
+                </h1>
+                <p className="text-gray-600">Détails du consultant</p>
               </div>
             </div>
             
             {/* Action Buttons */}
             <div className="flex space-x-3">
               <motion.button
-                onClick={handleEditManager}
+                onClick={handleEditConsultant}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -161,7 +192,7 @@ export default function ManagerDetailsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Manager Overview */}
+            {/* Consultant Overview */}
             <motion.div 
               className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
               initial={{ opacity: 0, y: 20 }}
@@ -169,29 +200,35 @@ export default function ManagerDetailsPage() {
               transition={{ duration: 0.3 }}
             >
               <div className="flex items-start space-x-6">
-                <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center">
-                  <span className="text-orange-600 font-bold text-2xl">
-                    {manager.name.split(' ').map(n => n[0]).join('')}
+                <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center">
+                  <span className="text-blue-600 font-bold text-2xl">
+                    {consultant.first_name?.[0]}{consultant.last_name?.[0]}
                   </span>
                 </div>
                 
                 <div className="flex-1">
                   <div className="flex items-center space-x-3 mb-4">
-                    <h2 className="text-2xl font-bold text-gray-900">{manager.name}</h2>
-                    <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800">
-                      {manager.role}
+                    <h2 className="text-2xl font-bold text-gray-900">
+                      {consultant.name || `${consultant.first_name} ${consultant.last_name}`}
+                    </h2>
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      consultant.status === 'active' 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                      {consultant.status === 'active' ? 'Actif' : 'Inactif'}
                     </span>
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm text-gray-600">Rôle</p>
-                      <p className="font-medium text-gray-900">{manager.role}</p>
+                      <p className="font-medium text-gray-900">{consultant.role}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-600">Date de création</p>
+                      <p className="text-sm text-gray-600">Taux journalier</p>
                       <p className="font-medium text-gray-900">
-                        {new Date(manager.created_at).toLocaleDateString('fr-FR')}
+                        {consultant.daily_rate ? `${consultant.daily_rate} €` : 'Non défini'}
                       </p>
                     </div>
                   </div>
@@ -207,7 +244,7 @@ export default function ManagerDetailsPage() {
               transition={{ duration: 0.3, delay: 0.1 }}
             >
               <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                <User className="h-5 w-5 text-orange-600 mr-2" />
+                <User className="h-5 w-5 text-blue-600 mr-2" />
                 Informations de Contact
               </h2>
               
@@ -216,7 +253,7 @@ export default function ManagerDetailsPage() {
                   <Mail className="h-5 w-5 text-gray-400" />
                   <div>
                     <p className="text-sm text-gray-600">Email</p>
-                    <p className="font-medium text-gray-900">{manager.email}</p>
+                    <p className="font-medium text-gray-900">{consultant.email}</p>
                   </div>
                 </div>
                 
@@ -224,7 +261,7 @@ export default function ManagerDetailsPage() {
                   <Phone className="h-5 w-5 text-gray-400" />
                   <div>
                     <p className="text-sm text-gray-600">Téléphone</p>
-                    <p className="font-medium text-gray-900">{manager.phone || 'Non renseigné'}</p>
+                    <p className="font-medium text-gray-900">{consultant.phone || 'Non renseigné'}</p>
                   </div>
                 </div>
                 
@@ -232,7 +269,7 @@ export default function ManagerDetailsPage() {
                   <MapPin className="h-5 w-5 text-gray-400" />
                   <div>
                     <p className="text-sm text-gray-600">Adresse</p>
-                    <p className="font-medium text-gray-900">{manager.address || 'Non renseignée'}</p>
+                    <p className="font-medium text-gray-900">{consultant.address || 'Non renseignée'}</p>
                   </div>
                 </div>
                 
@@ -241,46 +278,41 @@ export default function ManagerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600">Date de création</p>
                     <p className="font-medium text-gray-900">
-                      {new Date(manager.created_at).toLocaleDateString('fr-FR')}
+                      {new Date(consultant.created_at).toLocaleDateString('fr-FR')}
                     </p>
                   </div>
                 </div>
               </div>
             </motion.div>
-          </div>
 
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Manager Info Card */}
-            <motion.div 
-              className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.2 }}
-            >
-              <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                <Shield className="h-5 w-5 text-orange-600 mr-2" />
-                Informations
-              </h2>
-              
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">ID</span>
-                  <span className="font-medium text-gray-900">#{manager.id}</span>
+            {/* Skills */}
+            {skillsArray.length > 0 && (
+              <motion.div 
+                className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.2 }}
+              >
+                <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                  <Code className="h-5 w-5 text-blue-600 mr-2" />
+                  Compétences
+                </h2>
+                
+                <div className="flex flex-wrap gap-2">
+                  {skillsArray.map((skill, index) => (
+                    <span 
+                      key={index}
+                      className="inline-flex px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium"
+                    >
+                      {skill}
+                    </span>
+                  ))}
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Rôle</span>
-                  <span className="font-medium text-orange-600">{manager.role}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Client ID</span>
-                  <span className="font-medium text-gray-900">#{manager.client_id}</span>
-                </div>
-              </div>
-            </motion.div>
+              </motion.div>
+            )}
 
-            {/* Client Info */}
-            {manager.client && (
+            {/* Project Information */}
+            {consultant.project && (
               <motion.div 
                 className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
                 initial={{ opacity: 0, y: 20 }}
@@ -288,25 +320,103 @@ export default function ManagerDetailsPage() {
                 transition={{ duration: 0.3, delay: 0.3 }}
               >
                 <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                  <Building className="h-5 w-5 text-orange-600 mr-2" />
+                  <Briefcase className="h-5 w-5 text-blue-600 mr-2" />
+                  Projet Assigné
+                </h2>
+                
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="font-medium text-gray-900">{consultant.project.name}</h3>
+                  {consultant.project.description && (
+                    <p className="text-gray-600 text-sm mt-1">{consultant.project.description}</p>
+                  )}
+                  <div className="flex items-center space-x-4 mt-3 text-sm text-gray-500">
+                    {consultant.project.start_date && (
+                      <span>Début: {new Date(consultant.project.start_date).toLocaleDateString('fr-FR')}</span>
+                    )}
+                    {consultant.project.end_date && (
+                      <span>Fin: {new Date(consultant.project.end_date).toLocaleDateString('fr-FR')}</span>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Consultant Info Card */}
+            <motion.div 
+              className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.2 }}
+            >
+              <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                <Briefcase className="h-5 w-5 text-blue-600 mr-2" />
+                Informations
+              </h2>
+              
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">ID</span>
+                  <span className="font-medium text-gray-900">#{consultant.id}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Statut</span>
+                  <span className={`font-medium flex items-center ${
+                    consultant.status === 'active' ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {consultant.status === 'active' ? (
+                      <><CheckCircle className="h-4 w-4 mr-1" /> Actif</>
+                    ) : (
+                      <><XCircle className="h-4 w-4 mr-1" /> Inactif</>
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Client ID</span>
+                  <span className="font-medium text-gray-900">#{consultant.client_id}</span>
+                </div>
+                {consultant.daily_rate && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Taux journalier</span>
+                    <span className="font-medium text-blue-600 flex items-center">
+                      <DollarSign className="h-4 w-4 mr-1" />
+                      {consultant.daily_rate} €
+                    </span>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+
+            {/* Client Info */}
+            {consultant.client && (
+              <motion.div 
+                className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.3 }}
+              >
+                <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                  <User className="h-5 w-5 text-blue-600 mr-2" />
                   Entreprise
                 </h2>
                 
                 <div className="space-y-4">
                   <div>
                     <p className="text-sm text-gray-600">Nom de l'entreprise</p>
-                    <p className="font-medium text-gray-900">{manager.client.company_name}</p>
+                    <p className="font-medium text-gray-900">{consultant.client.company_name}</p>
                   </div>
-                  {manager.client.contact_name && (
+                  {consultant.client.contact_name && (
                     <div>
                       <p className="text-sm text-gray-600">Contact</p>
-                      <p className="font-medium text-gray-900">{manager.client.contact_name}</p>
+                      <p className="font-medium text-gray-900">{consultant.client.contact_name}</p>
                     </div>
                   )}
-                  {manager.client.contact_email && (
+                  {consultant.client.contact_email && (
                     <div>
                       <p className="text-sm text-gray-600">Email</p>
-                      <p className="font-medium text-gray-900">{manager.client.contact_email}</p>
+                      <p className="font-medium text-gray-900">{consultant.client.contact_email}</p>
                     </div>
                   )}
                 </div>
@@ -316,7 +426,7 @@ export default function ManagerDetailsPage() {
         </div>
       </main>
 
-      {/* Delete Manager Modal */}
+      {/* Delete Consultant Modal */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <motion.div 
@@ -327,10 +437,10 @@ export default function ManagerDetailsPage() {
           >
             <div className="flex items-center space-x-3 mb-4">
               <AlertTriangle className="h-6 w-6 text-red-600" />
-              <h3 className="text-lg font-semibold text-gray-900">Supprimer le Manager</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Supprimer le Consultant</h3>
             </div>
             <p className="text-gray-600 mb-6">
-              Êtes-vous sûr de vouloir supprimer {manager.name} ? Cette action est irréversible.
+              Êtes-vous sûr de vouloir supprimer {consultant.name || `${consultant.first_name} ${consultant.last_name}`} ? Cette action est irréversible.
             </p>
             <div className="flex justify-end space-x-3">
               <button
@@ -340,7 +450,7 @@ export default function ManagerDetailsPage() {
                 Annuler
               </button>
               <button
-                onClick={handleDeleteManager}
+                onClick={handleDeleteConsultant}
                 disabled={isDeleting}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
               >
@@ -353,10 +463,3 @@ export default function ManagerDetailsPage() {
     </div>
   )
 }
-
-
-
-
-
-
-

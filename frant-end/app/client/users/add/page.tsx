@@ -142,12 +142,22 @@ export default function AddUserPage() {
     setErrors({})
     
     try {
-      // Préparer les données pour l'API
+      // Préparer les données pour l'API (sans le champ 'role' qui n'est pas attendu par le backend)
       const consultantData = {
-        ...formData,
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        email: formData.email,
+        phone: formData.phone || null,
+        password: formData.password,
+        address: formData.address || null,
+        daily_rate: formData.daily_rate || null,
+        status: formData.status,
         client_id: user?.id, // Utiliser l'ID du client connecté
-        skills: selectedSkills.length > 0 ? selectedSkills.join(', ') : formData.skills
+        skills: selectedSkills.length > 0 ? selectedSkills.join(', ') : (formData.skills || null)
       }
+      
+      console.log('User object:', user)
+      console.log('Sending consultant data:', consultantData)
       
       // Appel à l'API pour créer le consultant
       await ConsultantAPI.create(consultantData)
@@ -161,9 +171,35 @@ export default function AddUserPage() {
       
     } catch (error: any) {
       console.error('Error creating consultant:', error)
-      setErrors({ 
-        submit: error.response?.data?.message || 'Erreur lors de la création du consultant' 
-      })
+      console.error('Response data:', error.response?.data)
+      console.error('Response status:', error.response?.status)
+      
+      // Récupérer les erreurs de validation du backend
+      if (error.response?.data?.errors) {
+        const backendErrors: Record<string, string> = {}
+        const validationErrors = error.response.data.errors
+        
+        console.error('Validation errors:', validationErrors)
+        
+        // Convertir les erreurs Laravel en format frontend
+        Object.keys(validationErrors).forEach(field => {
+          backendErrors[field] = Array.isArray(validationErrors[field]) 
+            ? validationErrors[field][0] 
+            : validationErrors[field]
+        })
+        
+        // Ajouter un message global avec toutes les erreurs
+        const allErrors = Object.entries(backendErrors)
+          .map(([field, msg]) => `${field}: ${msg}`)
+          .join(' | ')
+        backendErrors.submit = allErrors
+        
+        setErrors(backendErrors)
+      } else {
+        setErrors({ 
+          submit: error.response?.data?.message || JSON.stringify(error.response?.data) || 'Erreur lors de la création du consultant' 
+        })
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -588,16 +624,24 @@ export default function AddUserPage() {
             </motion.button>
           </motion.div>
           
-          {errors.submit && (
+          {(errors.submit || errors.client_id) && (
             <motion.div 
               className="p-4 bg-red-50 border border-red-200 rounded-lg"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
             >
-              <p className="text-sm text-red-600 flex items-center">
-                <AlertCircle className="h-4 w-4 mr-2" />
-                {errors.submit}
-              </p>
+              {errors.submit && (
+                <p className="text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-2" />
+                  {errors.submit}
+                </p>
+              )}
+              {errors.client_id && (
+                <p className="text-sm text-red-600 flex items-center mt-1">
+                  <AlertCircle className="h-4 w-4 mr-2" />
+                  Erreur client: {errors.client_id}
+                </p>
+              )}
             </motion.div>
           )}
         </form>

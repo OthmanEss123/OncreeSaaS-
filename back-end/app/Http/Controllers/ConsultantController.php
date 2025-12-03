@@ -21,29 +21,36 @@ class ConsultantController extends Controller
      */
     public function store(Request $request)
     {
-        $data = $request->validate([
-            'first_name'  => 'required|string|max:150',
-            'last_name'   => 'required|string|max:150',
-            'email'       => 'required|email|unique:consultants',
-            'password'    => 'required|string|min:8',
-            'phone'       => 'nullable|string|max:30',
-            'client_id'   => 'nullable|exists:clients,id',
-            'address'     => 'nullable|string|max:255',   // ✅ adresse
-            'skills'      => 'nullable|string',
-            'daily_rate'  => 'nullable|numeric',
-            'status'      => 'in:active,inactive',
-            'project_id'  => 'nullable|exists:projects,id',
-        ]);
+        try {
+            $data = $request->validate([
+                'first_name'  => 'required|string|max:150',
+                'last_name'   => 'required|string|max:150',
+                'email'       => 'required|email|unique:consultants,email',
+                'password'    => 'required|string|min:8',
+                'phone'       => 'nullable|string|max:30',
+                'client_id'   => 'nullable|exists:clients,id',
+                'address'     => 'nullable|string|max:255',
+                'skills'      => 'nullable|string',
+                'daily_rate'  => 'nullable|numeric',
+                'status'      => 'nullable|in:active,inactive',
+                'project_id'  => 'nullable|exists:projects,id',
+            ]);
 
-        $data['name'] = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
-        if (empty($data['name'])) {
-            $data['name'] = $data['email']; // Fallback sur l'email si name est vide
+            $data['password'] = bcrypt($data['password']);
+            $consultant = Consultant::create($data);
+            return response()->json($consultant, 201);
+            
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Erreur de validation',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Erreur lors de la création',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        unset($data['first_name'], $data['last_name']);
-
-        $data['password'] = bcrypt($data['password']);
-
-        return Consultant::create($data);
     }
 
     /**
@@ -85,20 +92,11 @@ class ConsultantController extends Controller
             'project_id'  => 'nullable|exists:projects,id', 
         ]);
 
-        if (isset($data['first_name']) || isset($data['last_name'])) {
-            $first = $data['first_name'] ?? '';
-            $last  = $data['last_name'] ?? '';
-            $data['name'] = trim($first.' '.$last);
-            if (empty($data['name'])) {
-                $data['name'] = $data['email'] ?? $consultant->email; // Fallback sur l'email si name est vide
-            }
-        }
-        unset($data['first_name'], $data['last_name']);
-    
+        // Ne pas supprimer first_name/last_name - ils sont les vraies colonnes
+        // 'name' est un accesseur virtuel calculé automatiquement
         if (isset($data['password'])) {
             $data['password'] = bcrypt($data['password']);
         }
-    
 
         $consultant->update($data);
         return $consultant;

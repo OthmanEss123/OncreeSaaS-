@@ -4,33 +4,28 @@ import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
 import { useAuth } from '@/hooks/use-auth'
-import { ManagerAPI } from '@/lib/api'
-import type { Manager } from '@/lib/type'
+import { ComptableAPI, invalidateCache } from '@/lib/api'
+import type { Comptable } from '@/lib/type'
 import { 
   ArrowLeft, 
   Save, 
-  Shield, 
   User, 
   Mail, 
   Phone,
   MapPin,
+  Calculator,
   AlertCircle,
-  Eye,
-  EyeOff,
   Loader2
 } from 'lucide-react'
 
-// TypeScript Interfaces
-interface ManagerFormData {
+interface ComptableFormData {
   name: string
   email: string
   phone: string
-  role: 'Manager'
   address: string
-  password: string
 }
 
-export default function EditManagerPage() {
+export default function EditComptablePage() {
   const router = useRouter()
   const params = useParams()
   const { user, loading: authLoading, isAuthenticated } = useAuth()
@@ -38,53 +33,14 @@ export default function EditManagerPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [success, setSuccess] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [manager, setManager] = useState<Manager | null>(null)
+  const [comptable, setComptable] = useState<Comptable | null>(null)
   
-  const [formData, setFormData] = useState<ManagerFormData>({
+  const [formData, setFormData] = useState<ComptableFormData>({
     name: '',
     email: '',
     phone: '',
-    role: 'Manager',
-    address: '',
-    password: ''
+    address: ''
   })
-
-  // Fetch manager data
-  useEffect(() => {
-    const fetchManager = async () => {
-      try {
-        setIsLoading(true)
-        const managerId = parseInt(params.id as string)
-        if (isNaN(managerId)) {
-          throw new Error('ID de manager invalide')
-        }
-
-        const response = await ManagerAPI.get(managerId)
-        const managerData = response.data || response
-        setManager(managerData)
-        
-        // Populate form with manager data
-        setFormData({
-          name: managerData.name || '',
-          email: managerData.email || '',
-          phone: managerData.phone || '',
-          role: 'Manager',
-          address: managerData.address || '',
-          password: '' // Don't populate password for security
-        })
-      } catch (err: any) {
-        console.error('Erreur lors du chargement du manager:', err)
-        setErrors({ submit: err.response?.data?.message || 'Erreur lors du chargement des données' })
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    if (params.id) {
-      fetchManager()
-    }
-  }, [params.id])
 
   // Redirection si pas authentifié
   useEffect(() => {
@@ -93,21 +49,44 @@ export default function EditManagerPage() {
     }
   }, [authLoading, isAuthenticated, router])
 
+  // Fetch Comptable data
+  useEffect(() => {
+    const fetchComptableData = async () => {
+      try {
+        setIsLoading(true)
+        
+        const comptableId = parseInt(params.id as string)
+        if (isNaN(comptableId)) {
+          throw new Error('ID de comptable invalide')
+        }
+
+        const response = await ComptableAPI.get(comptableId)
+        const comptableData = response.data || response
+        setComptable(comptableData)
+
+        // Populate form
+        setFormData({
+          name: comptableData.name || '',
+          email: comptableData.email || '',
+          phone: comptableData.phone || '',
+          address: comptableData.address || ''
+        })
+      } catch (err: any) {
+        console.error('Erreur lors du chargement du comptable:', err)
+        setErrors({ fetch: err.response?.data?.message || err.message || 'Erreur lors du chargement des données' })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    if (params.id && !authLoading && isAuthenticated) {
+      fetchComptableData()
+    }
+  }, [params.id, authLoading, isAuthenticated])
+
   // Si pas authentifié, ne rien afficher pendant la redirection
   if (!authLoading && !isAuthenticated) {
     return null
-  }
-
-  // Affichage du loading
-  if (authLoading || isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-orange-600 mx-auto mb-4" />
-          <p className="text-gray-600">Chargement...</p>
-        </div>
-      </div>
-    )
   }
 
   // Validation function
@@ -124,15 +103,6 @@ export default function EditManagerPage() {
       newErrors.email = 'L\'email n\'est pas valide'
     }
     
-    if (!formData.phone.trim()) {
-      newErrors.phone = 'Le téléphone est requis'
-    }
-    
-    // Password is optional for edit (only validate if provided)
-    if (formData.password && formData.password.length < 6) {
-      newErrors.password = 'Le mot de passe doit contenir au moins 6 caractères'
-    }
-    
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -141,7 +111,7 @@ export default function EditManagerPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!validateForm() || !manager) {
+    if (!validateForm() || !comptable) {
       return
     }
     
@@ -149,37 +119,63 @@ export default function EditManagerPage() {
     setErrors({})
     
     try {
-      // Préparer les données pour l'API
-      const managerData: Partial<Manager> & { password?: string } = {
+      const updateData = {
         name: formData.name,
         email: formData.email,
-        phone: formData.phone,
-        address: formData.address,
+        phone: formData.phone || null,
+        address: formData.address || null
       }
       
-      // Only include password if it was changed
-      if (formData.password) {
-        managerData.password = formData.password
-      }
-      
-      // Appel à l'API pour mettre à jour le manager
-      await ManagerAPI.update(manager.id, managerData)
+      await ComptableAPI.update(comptable.id, updateData)
+      invalidateCache(`/comptables/${comptable.id}`)
+      invalidateCache('/comptables')
       
       setSuccess(true)
       
       // Redirection après 2 secondes
       setTimeout(() => {
-        router.push(`/client/manager/${manager.id}`)
+        router.push(`/manager/comptable/${comptable.id}`)
       }, 2000)
       
     } catch (error: any) {
-      console.error('Error updating manager:', error)
+      console.error('Error updating comptable:', error)
       setErrors({ 
-        submit: error.response?.data?.message || 'Erreur lors de la mise à jour du manager' 
+        submit: error.response?.data?.message || 'Erreur lors de la mise à jour du comptable' 
       })
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  // Show loading state
+  if (authLoading || isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-purple-600 mx-auto mb-4" />
+          <p className="text-gray-600">Chargement des données...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show fetch error
+  if (errors.fetch || !comptable) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-4">
+          <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Erreur</h2>
+          <p className="text-gray-600 mb-6">{errors.fetch || 'Comptable introuvable'}</p>
+          <button
+            onClick={() => router.back()}
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            Retour
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -198,10 +194,8 @@ export default function EditManagerPage() {
                 <ArrowLeft className="h-5 w-5 text-gray-600" />
               </motion.button>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Modifier le Manager</h1>
-                <p className="text-gray-600">
-                  Modifier les informations de {manager?.name}
-                </p>
+                <h1 className="text-2xl font-bold text-gray-900">Modifier le Comptable</h1>
+                <p className="text-gray-600">{comptable.name}</p>
               </div>
             </div>
           </div>
@@ -218,12 +212,12 @@ export default function EditManagerPage() {
             transition={{ duration: 0.3 }}
           >
             <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-              <User className="h-5 w-5 text-orange-600 mr-2" />
+              <User className="h-5 w-5 text-purple-600 mr-2" />
               Informations Personnelles
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Nom complet *
                 </label>
@@ -231,7 +225,7 @@ export default function EditManagerPage() {
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 ${
                     errors.name ? 'border-red-500' : 'border-gray-300'
                   }`}
                   placeholder="Ex: Jean Dupont"
@@ -246,51 +240,20 @@ export default function EditManagerPage() {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nouveau mot de passe (optionnel)
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={formData.password}
-                    onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
-                    className={`w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
-                      errors.password ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="Laisser vide pour garder l'actuel"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
-                {errors.password && (
-                  <p className="mt-1 text-sm text-red-600 flex items-center">
-                    <AlertCircle className="h-4 w-4 mr-1" />
-                    {errors.password}
-                  </p>
-                )}
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Email *
                 </label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
-                    errors.email ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="jean.dupont@email.com"
-                />
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 ${
+                      errors.email ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    placeholder="jean.dupont@email.com"
+                  />
+                </div>
                 {errors.email && (
                   <p className="mt-1 text-sm text-red-600 flex items-center">
                     <AlertCircle className="h-4 w-4 mr-1" />
@@ -301,36 +264,34 @@ export default function EditManagerPage() {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Téléphone *
+                  Téléphone
                 </label>
-                <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
-                    errors.phone ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="+33 6 12 34 56 78"
-                />
-                {errors.phone && (
-                  <p className="mt-1 text-sm text-red-600 flex items-center">
-                    <AlertCircle className="h-4 w-4 mr-1" />
-                    {errors.phone}
-                  </p>
-                )}
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="tel"
+                    value={formData.phone}
+                    onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    placeholder="+33 6 12 34 56 78"
+                  />
+                </div>
               </div>
               
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Adresse
                 </label>
-                <input
-                  type="text"
-                  value={formData.address}
-                  onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                  placeholder="Ex: 123 Rue de la Paix, 75001 Paris"
-                />
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={formData.address}
+                    onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    placeholder="Ex: 123 Rue de la Paix, 75001 Paris"
+                  />
+                </div>
               </div>
             </div>
           </motion.div>
@@ -343,7 +304,7 @@ export default function EditManagerPage() {
             transition={{ duration: 0.3, delay: 0.1 }}
           >
             <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-              <Shield className="h-5 w-5 text-orange-600 mr-2" />
+              <Calculator className="h-5 w-5 text-purple-600 mr-2" />
               Informations Professionnelles
             </h2>
             
@@ -354,7 +315,7 @@ export default function EditManagerPage() {
                 </label>
                 <input
                   type="text"
-                  value={formData.role}
+                  value="Comptable"
                   disabled
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500"
                 />
@@ -372,7 +333,21 @@ export default function EditManagerPage() {
             >
               <p className="text-sm text-green-600 flex items-center">
                 <AlertCircle className="h-4 w-4 mr-2" />
-                Manager mis à jour avec succès ! Redirection en cours...
+                Comptable mis à jour avec succès ! Redirection en cours...
+              </p>
+            </motion.div>
+          )}
+
+          {/* Error Message */}
+          {errors.submit && (
+            <motion.div 
+              className="p-4 bg-red-50 border border-red-200 rounded-lg"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            >
+              <p className="text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-2" />
+                {errors.submit}
               </p>
             </motion.div>
           )}
@@ -382,7 +357,7 @@ export default function EditManagerPage() {
             className="flex justify-end space-x-4"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.4 }}
+            transition={{ duration: 0.3, delay: 0.2 }}
           >
             <button
               type="button"
@@ -398,14 +373,14 @@ export default function EditManagerPage() {
               className={`px-6 py-2 rounded-lg text-white flex items-center space-x-2 ${
                 isSubmitting || success
                   ? 'bg-gray-400 cursor-not-allowed' 
-                  : 'bg-orange-600 hover:bg-orange-700'
+                  : 'bg-purple-600 hover:bg-purple-700'
               } transition-colors`}
               whileHover={!isSubmitting && !success ? { scale: 1.05 } : {}}
               whileTap={!isSubmitting && !success ? { scale: 0.95 } : {}}
             >
               {isSubmitting ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   <span>Mise à jour...</span>
                 </>
               ) : success ? (
@@ -416,33 +391,13 @@ export default function EditManagerPage() {
               ) : (
                 <>
                   <Save className="h-4 w-4" />
-                  <span>Enregistrer les modifications</span>
+                  <span>Enregistrer</span>
                 </>
               )}
             </motion.button>
           </motion.div>
-          
-          {errors.submit && (
-            <motion.div 
-              className="p-4 bg-red-50 border border-red-200 rounded-lg"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-            >
-              <p className="text-sm text-red-600 flex items-center">
-                <AlertCircle className="h-4 w-4 mr-2" />
-                {errors.submit}
-              </p>
-            </motion.div>
-          )}
         </form>
       </main>
     </div>
   )
 }
-
-
-
-
-
-
-
