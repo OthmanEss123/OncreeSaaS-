@@ -23,7 +23,8 @@ import {
   RefreshCw,
   Edit,
   Upload,
-  Send
+  Send,
+  LogOut
 } from 'lucide-react'
 
 // TypeScript Interfaces
@@ -295,6 +296,14 @@ export default function UserDashboard() {
   }
 
 
+  // Fonction de déconnexion
+  const handleLogout = () => {
+    // Supprimer le token d'authentification
+    localStorage.removeItem('authToken')
+    // Rediriger vers la page de connexion
+    router.push('/login')
+  }
+
   // Handle edit work log - redirect to timesheet with data for modification
   const handleEditWorkLog = (workLog: WorkLog) => {
     // Save the work log data to localStorage for the timesheet to access
@@ -540,8 +549,8 @@ export default function UserDashboard() {
               </div>
             
              {/* Quick Stats */}
-             {project && (
-               <div className="hidden lg:flex">
+             <div className="hidden lg:flex items-center space-x-4">
+               {project && (
                  <motion.div 
                    className="bg-card p-4 rounded-lg border border-border"
                    whileHover={{ scale: 1.02 }}
@@ -555,8 +564,33 @@ export default function UserDashboard() {
                      </div>
                    </div>
                  </motion.div>
-               </div>
-             )}
+               )}
+               
+               {/* Bouton Déconnexion */}
+               <motion.button
+                 onClick={handleLogout}
+                 className="bg-destructive text-destructive-foreground px-4 py-2 rounded-lg hover:bg-destructive/80 transition-colors flex items-center space-x-2"
+                 whileHover={{ scale: 1.05 }}
+                 whileTap={{ scale: 0.95 }}
+                 title="Se déconnecter"
+               >
+                 <LogOut className="h-5 w-5" />
+                 <span>Déconnexion</span>
+               </motion.button>
+             </div>
+             
+             {/* Bouton Déconnexion Mobile */}
+             <div className="lg:hidden">
+               <motion.button
+                 onClick={handleLogout}
+                 className="bg-destructive text-destructive-foreground p-2 rounded-lg hover:bg-destructive/80 transition-colors"
+                 whileHover={{ scale: 1.05 }}
+                 whileTap={{ scale: 0.95 }}
+                 title="Se déconnecter"
+               >
+                 <LogOut className="h-5 w-5" />
+               </motion.button>
+             </div>
           </div>
         </div>
       </header>
