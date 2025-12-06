@@ -368,3 +368,8 @@ export default function ComptableDetailsPage() {
     </div>
   )
 }
+
+
+
+
+

@@ -208,7 +208,7 @@ class ComptableController extends Controller
             }
 
             // Récupérer uniquement les factures du même client
-            $factures = Facture::with(['client', 'consultant', 'quote'])
+            $factures = Facture::with(['client', 'consultant', 'quote', 'items'])
                 ->where('client_id', $comptable->client_id)
                 ->orderBy('facture_date', 'desc')
                 ->get();

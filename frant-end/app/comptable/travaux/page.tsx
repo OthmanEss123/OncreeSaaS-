@@ -149,10 +149,7 @@ export default function TravauxPage() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left p-4 font-medium text-muted-foreground">ID</th>
                   <th className="text-left p-4 font-medium text-muted-foreground">Consultant</th>
-                  <th className="text-left p-4 font-medium text-muted-foreground">Date</th>
-                  <th className="text-left p-4 font-medium text-muted-foreground">Type</th>
                   <th className="text-left p-4 font-medium text-muted-foreground">Jours Travaillés</th>
                   <th className="text-left p-4 font-medium text-muted-foreground">Jours Type Travail</th>
                   <th className="text-left p-4 font-medium text-muted-foreground">Week-end Travaillé</th>
@@ -161,7 +158,6 @@ export default function TravauxPage() {
                   <th className="text-left p-4 font-medium text-muted-foreground">Type de Travail</th>
                   <th className="text-left p-4 font-medium text-muted-foreground">Type de Congé</th>
                   <th className="text-left p-4 font-medium text-muted-foreground">Mois/Année</th>
-                  <th className="text-left p-4 font-medium text-muted-foreground">Notes</th>
                   <th className="text-left p-4 font-medium text-muted-foreground">Actions</th>
                 </tr>
               </thead>
@@ -169,7 +165,6 @@ export default function TravauxPage() {
                 {workSchedules.length > 0 ? (
                   workSchedules.map((schedule, index) => (
                     <tr key={schedule.id} className={index % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                      <td className="p-4 text-muted-foreground">#{schedule.id}</td>
                       <td className="p-4">
                         <div className="font-medium text-foreground">
                           {schedule.consultant ? (
@@ -184,26 +179,8 @@ export default function TravauxPage() {
                           <div className="text-xs text-muted-foreground">{schedule.consultant.email}</div>
                         )}
                       </td>
-                      <td className="p-4 text-muted-foreground">
-                        {schedule.date ? new Date(schedule.date).toLocaleDateString('fr-FR', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        }) : 'N/A'}
-                      </td>
-                      <td className="p-4">
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          schedule.type === 'workday' 
-                            ? 'bg-blue-100 text-blue-800' 
-                            : schedule.type === 'weekend'
-                            ? 'bg-orange-100 text-orange-800'
-                            : 'bg-purple-100 text-purple-800'
-                        }`}>
-                          {schedule.type === 'workday' ? 'Jour ouvré' : 
-                           schedule.type === 'weekend' ? 'Week-end' : 
-                           schedule.type === 'vacation' ? 'Vacances' : 'N/A'}
-                        </span>
-                      </td>
+                      
+                      
                       <td className="p-4 text-muted-foreground">
                         {schedule.days_worked !== null && schedule.days_worked !== undefined 
                           ? `${schedule.days_worked}` 
@@ -271,11 +248,7 @@ export default function TravauxPage() {
                           ? `${schedule.month}/${schedule.year}` 
                           : 'N/A'}
                       </td>
-                      <td className="p-4 text-muted-foreground max-w-xs">
-                        <div className="truncate" title={schedule.notes || 'N/A'}>
-                          {schedule.notes || 'N/A'}
-                        </div>
-                      </td>
+                      
                       <td className="p-4">
                         <Button
                           size="sm"

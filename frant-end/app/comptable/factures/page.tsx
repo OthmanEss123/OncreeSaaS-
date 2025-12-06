@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
-import { ComptableAPI } from '@/lib/api'
+import { ComptableAPI, FactureAPI } from '@/lib/api'
 import type { Facture } from '@/lib/type'
-import { Receipt, Plus, Eye, ArrowLeft, Loader2, Calendar, Euro, User } from 'lucide-react'
+import { Receipt, Plus, Eye, ArrowLeft, Loader2, Calendar, Euro, User, Edit, Trash2, Send } from 'lucide-react'
 
 export default function FacturesPage() {
   const router = useRouter()
@@ -17,6 +17,8 @@ export default function FacturesPage() {
   const [factures, setFactures] = useState<Facture[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [sendingId, setSendingId] = useState<number | null>(null)
 
   useEffect(() => {
     loadFactures()
@@ -26,13 +28,13 @@ export default function FacturesPage() {
     try {
       setLoading(true)
       // Charger uniquement les factures du client du comptable
-      const data = await ComptableAPI.getMyFactures()
+      const data: unknown = await ComptableAPI.getMyFactures()
       // S'assurer que data est un tableau
       if (Array.isArray(data)) {
         setFactures(data)
-      } else if (data && Array.isArray(data.data)) {
+      } else if (data && typeof data === 'object' && 'data' in data && Array.isArray((data as { data: unknown }).data)) {
         // Si la réponse est encapsulée dans un objet data
-        setFactures(data.data)
+        setFactures((data as { data: Facture[] }).data)
       } else {
         console.error('Format de données inattendu:', data)
         setFactures([])
@@ -70,14 +72,82 @@ export default function FacturesPage() {
     })
   }
 
+  const handleEdit = (facture: Facture) => {
+    router.push(`/comptable/factures/edit/${facture.id}`)
+  }
+
+  const handleView = (facture: Facture) => {
+    router.push(`/comptable/factures/${facture.id}`)
+  }
+
+  const handleDelete = async (facture: Facture) => {
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer la facture #${facture.id} ?`)) {
+      return
+    }
+
+    try {
+      setDeletingId(facture.id)
+      await FactureAPI.delete(facture.id)
+      toast({
+        title: "Succès",
+        description: "Facture supprimée avec succès",
+      })
+      // Recharger la liste
+      loadFactures()
+    } catch (error) {
+      console.error('Erreur lors de la suppression:', error)
+      toast({
+        title: "Erreur",
+        description: "Impossible de supprimer la facture",
+        variant: "destructive"
+      })
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const handleSend = async (facture: Facture) => {
+    if (!confirm(`Voulez-vous envoyer la facture #${facture.id} au client ?`)) {
+      return
+    }
+
+    try {
+      setSendingId(facture.id)
+      await FactureAPI.update(facture.id, { status: 'sent' })
+      toast({
+        title: "Succès",
+        description: "Facture envoyée avec succès",
+      })
+      // Recharger la liste
+      loadFactures()
+    } catch (error) {
+      console.error('Erreur lors de l\'envoi:', error)
+      toast({
+        title: "Erreur",
+        description: "Impossible d'envoyer la facture",
+        variant: "destructive"
+      })
+    } finally {
+      setSendingId(null)
+    }
+  }
+
   // Calculer le total d'une facture : jours travaillés × taux journalier
-  const calculateFactureTotal = (facture: Facture): number => {
+  function calculateFactureTotal(facture: Facture): number {
     if (facture.items && facture.items.length > 0) {
       // Si la facture a des items : quantity (jours travaillés) × unit_price (taux journalier)
       return facture.items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0)
     }
-    // Fallback vers le total stocké ou 0
-    return facture.total || 0
+    // Fallback vers le total stocké
+    if (facture.total) {
+      return facture.total
+    }
+    // Utiliser le daily_rate du consultant (pour un mois standard de ~22 jours ouvrés)
+    if (facture.consultant?.daily_rate) {
+      const joursOuvresMois = 22 // Nombre moyen de jours ouvrés par mois
+      return facture.consultant.daily_rate * joursOuvresMois
+    }
+    return 0
   }
 
   // S'assurer que factures est toujours un tableau
@@ -215,7 +285,6 @@ export default function FacturesPage() {
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="border-b">
-                      <th className="text-left p-4 font-medium text-muted-foreground">ID</th>
                       <th className="text-left p-4 font-medium text-muted-foreground">Client</th>
                       <th className="text-left p-4 font-medium text-muted-foreground">Consultant</th>
                       <th className="text-left p-4 font-medium text-muted-foreground">Date</th>
@@ -231,9 +300,7 @@ export default function FacturesPage() {
                         key={facture.id} 
                         className={index % 2 === 0 ? "bg-background" : "bg-muted/20"}
                       >
-                        <td className="p-4">
-                          <div className="font-medium text-foreground">#{facture.id}</div>
-                        </td>
+                        
                         <td className="p-4">
                           <div className="text-foreground">
                             {facture.client?.company_name || 
@@ -271,19 +338,54 @@ export default function FacturesPage() {
                           {getStatusBadge(facture.status)}
                         </td>
                         <td className="p-4">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              // TODO: Ajouter la navigation vers la page de détail
-                              toast({
-                                title: "Détails",
-                                description: `Facture #${facture.id} - ${facture.status}`,
-                              })
-                            }}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleView(facture)}
+                              title="Voir les détails"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEdit(facture)}
+                              title="Modifier"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            {facture.status === 'draft' && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSend(facture)}
+                                disabled={sendingId === facture.id}
+                                title="Envoyer"
+                                className="text-blue-600 hover:text-blue-700"
+                              >
+                                {sendingId === facture.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Send className="h-4 w-4" />
+                                )}
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDelete(facture)}
+                              disabled={deletingId === facture.id}
+                              title="Supprimer"
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              {deletingId === facture.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}

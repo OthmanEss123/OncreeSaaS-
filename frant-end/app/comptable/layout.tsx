@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useEffect, useState } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { RoleLayout } from '@/components/role-layout'
 import { ComptableAPI } from '@/lib/api'
 import type { Comptable } from '@/lib/type'
@@ -14,23 +14,39 @@ export default function ComptableLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const router = useRouter()
   const [comptable, setComptable] = useState<Comptable | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Vérifier que l'utilisateur est bien un comptable
+    const userType = localStorage.getItem('userType')
+    if (userType !== 'comptable') {
+      console.error('Accès refusé: utilisateur non comptable, type actuel:', userType)
+      // Rediriger vers la page de login ou le bon dashboard
+      if (userType) {
+        router.push(`/${userType}`)
+      } else {
+        router.push('/login')
+      }
+      return
+    }
+
     const loadComptable = async () => {
       try {
         const comptableData = await ComptableAPI.me()
         setComptable(comptableData)
       } catch (error) {
         console.error('Erreur lors du chargement des données du comptable:', error)
+        // Si erreur 403, rediriger vers login
+        router.push('/login')
       } finally {
         setLoading(false)
       }
     }
 
     loadComptable()
-  }, [])
+  }, [router])
 
   const sidebarItems = [
     {

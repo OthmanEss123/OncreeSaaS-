@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 
 class FactureController extends Controller
 {
-    public function index() { return Facture::with(['client','consultant','quote'])->get(); }
+    public function index() { return Facture::with(['client','consultant','quote','items'])->get(); }
 
     public function store(Request $request) {
         try {
@@ -23,7 +23,7 @@ class FactureController extends Controller
             ]);
             
             $facture = Facture::create($data);
-            return response()->json($facture->load(['client', 'consultant']), 201);
+            return response()->json($facture->load(['client', 'consultant', 'items']), 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'message' => 'Erreur de validation',
@@ -38,7 +38,7 @@ class FactureController extends Controller
         }
     }
 
-    public function show(Facture $facture) { return $facture->load(['client','consultant','quote']); }
+    public function show(Facture $facture) { return $facture->load(['client','consultant','quote','items']); }
 
     public function update(Request $request, Facture $facture) {
         $data = $request->validate([
@@ -52,7 +52,7 @@ class FactureController extends Controller
             'total'            => 'nullable|numeric',
         ]);
         $facture->update($data);
-        return $facture;
+        return $facture->load(['client','consultant','quote','items']);
     }
 
     public function destroy(Facture $facture) {

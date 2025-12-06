@@ -11,6 +11,7 @@ use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\AssignmentController;
 use App\Http\Controllers\QuoteController;
 use App\Http\Controllers\FactureController;
+use App\Http\Controllers\FactureItemController;
 use App\Http\Controllers\WorkScheduleController;
 use App\Http\Controllers\WorkTypeController;
 use App\Http\Controllers\LeaveTypeController;
@@ -83,5 +84,6 @@ Route::apiResource('projects', ProjectController::class);
 Route::apiResource('assignments', AssignmentController::class);
 Route::apiResource('quotes', QuoteController::class);
 Route::apiResource('factures', FactureController::class);
+Route::apiResource('facture-items', FactureItemController::class);
 Route::apiResource('consultants', ConsultantController::class);
 

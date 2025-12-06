@@ -4,20 +4,23 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ConsultantAPI, ComptableAPI } from '@/lib/api'
+import { ComptableAPI } from '@/lib/api'
 import type { Consultant, Comptable } from '@/lib/type'
 import { Users, User, Receipt } from 'lucide-react'
+import axios from 'axios'
 
 export default function ComptablePage() {
   const router = useRouter()
   const [consultants, setConsultants] = useState<Consultant[]>([])
   const [comptable, setComptable] = useState<Comptable | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true)
+        setError(null)
         
         // Charger les informations du comptable connecté
         const comptableData = await ComptableAPI.me()
@@ -27,21 +30,45 @@ export default function ComptablePage() {
         const consultantsData = await ComptableAPI.getMyConsultants()
         setConsultants(consultantsData)
         
-      } catch (error) {
-        console.error('Erreur lors du chargement des données:', error)
+      } catch (err) {
+        console.error('Erreur lors du chargement des données:', err)
+        if (axios.isAxiosError(err) && err.response?.status === 403) {
+          setError('Accès refusé. Veuillez vous reconnecter en tant que comptable.')
+          // Rediriger vers login après un délai
+          setTimeout(() => router.push('/login'), 2000)
+        } else {
+          setError('Erreur lors du chargement des données.')
+        }
       } finally {
         setLoading(false)
       }
     }
 
     loadData()
-  }, [])
+  }, [router])
 
   if (loading) {
     return (
       <div className="space-y-6">
         <div className="text-center py-12">
           <p className="text-muted-foreground">Chargement...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center py-12">
+          <p className="text-destructive font-medium">{error}</p>
+          <Button 
+            variant="outline" 
+            className="mt-4"
+            onClick={() => router.push('/login')}
+          >
+            Retour à la connexion
+          </Button>
         </div>
       </div>
     )
