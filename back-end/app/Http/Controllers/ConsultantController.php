@@ -70,7 +70,26 @@ class ConsultantController extends Controller
             'assignments.project' // Assignments historiques avec leurs projets
         ]);
         
-        return $consultant;
+        // Recharger les workSchedules pour s'assurer qu'ils sont bien chargés
+        $consultant->load('workSchedules.workType', 'workSchedules.leaveType');
+        
+        // Log pour déboguer
+        \Log::info('ConsultantController::show - Consultant chargé', [
+            'consultant_id' => $consultant->id,
+            'work_schedules_count' => $consultant->workSchedules->count(),
+            'work_schedules_ids' => $consultant->workSchedules->pluck('id')->toArray(),
+            'first_schedule' => $consultant->workSchedules->first() ? [
+                'id' => $consultant->workSchedules->first()->id,
+                'date' => $consultant->workSchedules->first()->date,
+                'work_type' => $consultant->workSchedules->first()->workType ? $consultant->workSchedules->first()->workType->name : null,
+                'leave_type' => $consultant->workSchedules->first()->leaveType ? $consultant->workSchedules->first()->leaveType->name : null,
+            ] : null,
+            'consultant_to_array' => $consultant->toArray()
+        ]);
+        
+        // Forcer la sérialisation en convertissant en array puis en JSON
+        // Cela garantit que toutes les relations chargées sont incluses
+        return response()->json($consultant->toArray());
     }
 
     /**
@@ -139,24 +158,88 @@ class ConsultantController extends Controller
     public function getDashboardData(Request $request)
     {
         try {
-            $consultant = $request->user();
+            $user = $request->user();
             
-            // Charger toutes les relations nécessaires
+            // Vérifier que l'utilisateur est authentifié
+            if (!$user) {
+                \Log::warning('getDashboardData: Utilisateur non authentifié');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Utilisateur non authentifié'
+                ], 401);
+            }
+            
+            // Logger le type d'utilisateur pour le débogage
+            $userType = get_class($user);
+            \Log::info('getDashboardData: Type d\'utilisateur connecté', [
+                'type' => $userType,
+                'id' => $user->id ?? null,
+                'email' => $user->email ?? $user->contact_email ?? null
+            ]);
+            
+            // Vérifier que c'est bien un consultant
+            if (!$user instanceof \App\Models\Consultant) {
+                \Log::warning('getDashboardData: Accès refusé - pas un consultant', [
+                    'type_utilisateur' => $userType,
+                    'id' => $user->id ?? null
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Accès réservé aux consultants. Type d\'utilisateur détecté: ' . class_basename($userType)
+                ], 403);
+            }
+            
+            $consultant = $user;
+            
+            // Charger les relations de manière contrôlée pour éviter les problèmes de sérialisation
             $consultant->load([
                 'client', 
-                'project.client',
-                'workSchedules'
+                'project' => function ($query) {
+                    // Charger le projet avec son client, mais sans relations supplémentaires
+                    $query->with('client');
+                },
+                'workSchedules' => function ($query) {
+                    // Charger les work schedules avec leurs relations workType et leaveType
+                    $query->with(['workType', 'leaveType'])
+                          ->orderBy('date', 'desc');
+                }
             ]);
             
             // Récupérer les types de travail et congés
             $workTypes = \App\Models\WorkType::all();
             $leaveTypes = \App\Models\LeaveType::all();
             
+            // Construire la réponse de manière explicite pour éviter les problèmes de sérialisation
+            $projectData = null;
+            if ($consultant->project) {
+                $projectData = [
+                    'id' => $consultant->project->id,
+                    'name' => $consultant->project->name,
+                    'description' => $consultant->project->description,
+                    'start_date' => $consultant->project->start_date,
+                    'end_date' => $consultant->project->end_date,
+                    'client_id' => $consultant->project->client_id,
+                    'created_at' => $consultant->project->created_at,
+                    'updated_at' => $consultant->project->updated_at,
+                ];
+                
+                // Ajouter le client du projet si disponible
+                if ($consultant->project->client) {
+                    $projectData['client'] = [
+                        'id' => $consultant->project->client->id,
+                        'company_name' => $consultant->project->client->company_name,
+                        'contact_name' => $consultant->project->client->contact_name,
+                        'contact_email' => $consultant->project->client->contact_email,
+                        'contact_phone' => $consultant->project->client->contact_phone,
+                    ];
+                }
+            }
+            
             return response()->json([
                 'success' => true,
                 'data' => [
                     'consultant' => $consultant,
-                    'project' => $consultant->project,
+                    'project' => $projectData,
                     'workSchedules' => $consultant->workSchedules,
                     'workTypes' => $workTypes,
                     'leaveTypes' => $leaveTypes
@@ -164,6 +247,12 @@ class ConsultantController extends Controller
             ]);
             
         } catch (\Exception $e) {
+            \Log::error('Erreur dans getDashboardData: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors du chargement des données',

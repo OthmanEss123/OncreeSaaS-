@@ -114,12 +114,176 @@ export default function UserDashboard() {
     workType: 'Travaux internes (Consultants)'
   })
 
+  // Transformer les workSchedules en workLogs groupés par mois
+  const transformWorkSchedulesToWorkLogs = (schedules: WorkSchedule[]): WorkLog[] => {
+    if (!schedules || schedules.length === 0) {
+      console.log('⚠️ Aucun schedule à transformer')
+      return []
+    }
+    
+    console.log('🔄 Transformation de', schedules.length, 'workSchedules en workLogs')
+    console.log('📋 Premier schedule exemple:', schedules[0])
+    
+    const grouped = schedules.reduce((acc, schedule) => {
+      try {
+        // Vérifier que le schedule a les données nécessaires
+        if (!schedule.date && !schedule.month && !schedule.year) {
+          console.warn('⚠️ Schedule sans date/mois/année:', schedule)
+          return acc
+        }
+        
+        const date = schedule.date ? new Date(schedule.date) : new Date()
+        const month = schedule.month || date.getMonth() + 1
+        const year = schedule.year || date.getFullYear()
+        
+        // Vérifier que month et year sont valides
+        if (!month || !year || month < 1 || month > 12 || year < 2000 || year > 2100) {
+          console.warn('⚠️ Schedule avec mois/année invalide:', { month, year, schedule })
+          return acc
+        }
+        
+        const monthKey = `${year}-${String(month).padStart(2, '0')}`
+        
+        if (!acc[monthKey]) {
+          acc[monthKey] = {
+            id: monthKey,
+            month,
+            year,
+            monthName: new Date(year, month - 1, 1).toLocaleDateString('fr-FR', { 
+              month: 'long', 
+              year: 'numeric' 
+            }),
+            daysWorked: 0,
+            workDescription: 'Résumé mensuel',
+            additionalCharges: 0,
+            totalCost: 0,
+            weekendWork: 0,
+            absences: 0,
+            workTypeDays: 0,
+            absenceType: '',
+            workType: '',
+            details: []
+          }
+        }
+        
+        acc[monthKey].daysWorked += schedule.days_worked || 0
+        acc[monthKey].weekendWork += schedule.weekend_worked || 0
+        acc[monthKey].absences += schedule.absence_days || 0
+        acc[monthKey].workTypeDays += schedule.work_type_days || 0
+        
+        // Calculer les charges supplémentaires depuis les notes
+        if (schedule.notes) {
+          try {
+            const notes = typeof schedule.notes === 'string' ? JSON.parse(schedule.notes) : schedule.notes
+            if (notes.travelExpenses) {
+              if (Array.isArray(notes.travelExpenses)) {
+                acc[monthKey].additionalCharges += notes.travelExpenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0)
+              } else {
+                acc[monthKey].additionalCharges += parseFloat(notes.travelExpenses) || 0
+              }
+            }
+          } catch (e) {
+            // Ignorer les erreurs de parsing
+          }
+        }
+        
+        // Calculer le coût total
+        const dailyRate = consultant?.daily_rate || 450
+        const dayCost = (schedule.days_worked || 0) * dailyRate
+        acc[monthKey].totalCost += dayCost
+        
+        // Collecter les types d'absence
+        if (schedule.absence_type && schedule.absence_type !== 'none') {
+          if (schedule.leave_type?.name) {
+            if (!acc[monthKey].absenceType.includes(schedule.leave_type.name)) {
+              acc[monthKey].absenceType = acc[monthKey].absenceType 
+                ? `${acc[monthKey].absenceType}, ${schedule.leave_type.name}`
+                : schedule.leave_type.name
+            }
+          } else if (!acc[monthKey].absenceType.includes(schedule.absence_type)) {
+            acc[monthKey].absenceType = acc[monthKey].absenceType 
+              ? `${acc[monthKey].absenceType}, ${schedule.absence_type}`
+              : schedule.absence_type
+          }
+        }
+        
+        // Collecter les types de travail
+        if (schedule.work_type?.name && !acc[monthKey].workType.includes(schedule.work_type.name)) {
+          acc[monthKey].workType = acc[monthKey].workType 
+            ? `${acc[monthKey].workType}, ${schedule.work_type.name}`
+            : schedule.work_type.name
+        }
+        
+        // Ajouter les détails
+        acc[monthKey].details.push({
+          id: schedule.id.toString(),
+          date: schedule.date,
+          month,
+          year,
+          daysWorked: schedule.days_worked || 0,
+          workDescription: schedule.notes ? (typeof schedule.notes === 'string' ? schedule.notes : JSON.stringify(schedule.notes)) : 'Travail enregistré',
+          additionalCharges: acc[monthKey].additionalCharges,
+          totalCost: dayCost,
+          weekendWork: schedule.weekend_worked || 0,
+          absences: schedule.absence_days || 0,
+          workTypeDays: schedule.work_type_days || 0,
+          absenceType: schedule.absence_type || '',
+          workType: schedule.work_type?.name || ''
+        })
+      } catch (error) {
+        console.error('❌ Erreur lors de la transformation d\'un schedule:', error, schedule)
+      }
+      
+      return acc
+    }, {} as Record<string, any>)
+    
+    const result = Object.values(grouped).map((group: any) => ({
+      id: group.id,
+      month: group.month,
+      year: group.year,
+      monthName: group.monthName,
+      daysWorked: Math.round(group.daysWorked * 10) / 10,
+      workDescription: `${group.details.length} entrée(s) de travail`,
+      additionalCharges: Math.round(group.additionalCharges * 100) / 100,
+      totalCost: Math.round(group.totalCost * 100) / 100,
+      weekendWork: Math.round(group.weekendWork * 10) / 10,
+      absences: Math.round(group.absences * 10) / 10,
+      workTypeDays: Math.round(group.workTypeDays * 10) / 10,
+      absenceType: group.absenceType || '-',
+      workType: group.workType || '-',
+      details: group.details
+    })).sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year
+      return b.month - a.month
+    })
+    
+    console.log('✅ Transformation terminée:', result.length, 'mois groupés')
+    return result
+  }
 
   // Charger les données du consultant depuis l'API
   useEffect(() => {
     const fetchConsultantData = async () => {
       try {
         setLoading(true)
+        
+        // Vérifier que l'utilisateur est authentifié
+        const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+        const userType = typeof window !== 'undefined' ? localStorage.getItem('userType') : null
+        
+        if (!token) {
+          console.warn('⚠️ Aucun token d\'authentification trouvé, redirection vers /login')
+          router.push('/login')
+          return
+        }
+        
+        // Vérifier que l'utilisateur est bien un consultant
+        if (userType !== 'consultant') {
+          console.warn(`⚠️ Accès refusé: type d'utilisateur "${userType}" au lieu de "consultant"`)
+          console.warn('⚠️ Redirection vers la page de connexion')
+          router.push('/login')
+          return
+        }
         
         // 🚀 1 SEUL APPEL au lieu de 3 appels séparés!
         const data = await DashboardAPI.consultantDashboard()
@@ -130,7 +294,8 @@ export default function UserDashboard() {
         
         setConsultant(data.consultant)
         setProject(data.project)
-        setWorkSchedules(data.workSchedules || [])
+        const schedules = data.workSchedules || []
+        setWorkSchedules(schedules)
         setWorkTypes(data.workTypes || [])
         setLeaveTypes(data.leaveTypes || [])
         
@@ -138,10 +303,85 @@ export default function UserDashboard() {
           workTypes: (data.workTypes || []).length,
           leaveTypes: (data.leaveTypes || []).length
         })
+        
+        console.log('📊 WorkSchedules chargés:', {
+          nombre: schedules.length,
+          premier: schedules[0] || null,
+          tous: schedules
+        })
+        
+        // Transformer les workSchedules en workLogs groupés par mois
+        if (schedules.length > 0) {
+          console.log('📊 Transformation des workSchedules en workLogs:', schedules.length, 'entrées')
+          const transformedLogs = transformWorkSchedulesToWorkLogs(schedules)
+          console.log('✅ WorkLogs transformés:', transformedLogs.length, 'mois')
+          console.log('📋 Détails des workLogs:', transformedLogs)
+          setWorkLogs(transformedLogs)
+        } else {
+          console.log('⚠️ Aucun workSchedule trouvé, tentative de chargement depuis /work-logs-grouped')
+          // Essayer de charger depuis l'endpoint groupé
+          loadWorkLogsFromBackend()
+        }
        
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Erreur lors du chargement des données:', error)
+        
+        // Améliorer l'extraction du message d'erreur
+        let errorMessage = 'Erreur lors du chargement des données'
+        let errorStatus = null
+        
+        try {
+          if (error?.response) {
+            errorStatus = error.response.status
+            
+            // Essayer différentes façons d'extraire le message
+            if (error.response.data) {
+              if (typeof error.response.data === 'string') {
+                errorMessage = error.response.data
+              } else if (error.response.data.error) {
+                errorMessage = error.response.data.error
+              } else if (error.response.data.message) {
+                errorMessage = error.response.data.message
+              } else {
+                // Essayer de sérialiser les données pour voir ce qu'elles contiennent
+                try {
+                  errorMessage = JSON.stringify(error.response.data)
+                } catch (e) {
+                  errorMessage = 'Erreur serveur (données non sérialisables)'
+                }
+              }
+            }
+          } else if (error?.message) {
+            errorMessage = error.message
+          }
+        } catch (e) {
+          console.error('Erreur lors de l\'extraction du message:', e)
+        }
+        
+        console.error('📋 Détails de l\'erreur:', {
+          status: errorStatus,
+          statusText: error?.response?.statusText,
+          message: errorMessage,
+          errorType: error?.name,
+          errorCode: error?.code,
+          fullError: error
+        })
+        
+        // Si l'erreur est 401 (non authentifié), rediriger vers la page de connexion
+        if (errorStatus === 401) {
+          console.warn('⚠️ Non authentifié, redirection vers /login')
+          router.push('/login')
+          return
+        }
+        
+        // Si l'erreur est 500, afficher un message plus informatif
+        if (errorStatus === 500) {
+          console.error('⚠️ Erreur serveur 500. Vérifiez les logs du serveur backend.')
+          console.error('💡 Message d\'erreur:', errorMessage)
+        }
+        
         // En cas d'erreur, on garde les données mockées
+        // L'utilisateur pourra toujours utiliser l'interface avec les données mockées
         
       } finally {
         setLoading(false)
@@ -331,7 +571,7 @@ export default function UserDashboard() {
       return;
     }
 
-    if (!confirm(`Êtes-vous sûr de vouloir envoyer le rapport de ${log.monthName} à ${clientName} (${clientEmail}) ?`)) {
+    if (!confirm(`Êtes-vous sûr de vouloir envoyer le rapport de ${log.monthName} ?\n\nLe rapport sera envoyé au client (${clientEmail}) ainsi qu'au comptable, RH et manager associés.`)) {
       return;
     }
 
@@ -363,10 +603,14 @@ export default function UserDashboard() {
     }
   };
 
-  // Load data from backend on component mount
+  // Load data from backend on component mount (seulement si workSchedules est vide)
   useEffect(() => {
-    loadWorkLogsFromBackend()
-  }, [])
+    // Si workSchedules est vide, essayer de charger depuis l'endpoint groupé
+    if (workSchedules.length === 0 && consultant) {
+      console.log('📥 Chargement depuis /work-logs-grouped car workSchedules est vide')
+      loadWorkLogsFromBackend()
+    }
+  }, [consultant])
 
   // Initialize with grouped mock data
   useEffect(() => {
@@ -801,7 +1045,7 @@ export default function UserDashboard() {
                             className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-1 text-sm font-medium"
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
-                            title="Envoyer le rapport au client par email">
+                            title="Envoyer le rapport au client, comptable, RH et manager par email">
                             <Send className="h-4 w-4" />
                             <span>Envoyer</span>
                           </motion.button>

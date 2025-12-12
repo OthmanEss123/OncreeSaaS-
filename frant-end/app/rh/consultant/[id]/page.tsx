@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
 import { ConsultantAPI, RhAPI, invalidateCache } from '@/lib/api'
-import type { Consultant, Rh } from '@/lib/type'
+import type { Consultant, Rh, WorkSchedule } from '@/lib/type'
 import { 
   ArrowLeft, 
   Edit, 
@@ -20,7 +20,8 @@ import {
   DollarSign,
   CheckCircle,
   XCircle,
-  Code
+  Code,
+  RefreshCw
 } from 'lucide-react'
 
 export default function ConsultantDetailsPage() {
@@ -32,6 +33,21 @@ export default function ConsultantDetailsPage() {
   const [error, setError] = useState<string | null>(null)
   const [consultant, setConsultant] = useState<Consultant | null>(null)
   const [rh, setRh] = useState<Rh | null>(null)
+  const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([])
+
+  // Interface for grouped work log entries
+  interface WorkLogEntry {
+    id: string
+    month: number
+    year: number
+    monthName: string
+    daysWorked: number
+    weekendWork: number
+    absences: number
+    absenceType: string
+    workType: string
+    workTypeDays: number
+  }
 
   // Vérifier l'authentification
   useEffect(() => {
@@ -55,20 +71,38 @@ export default function ConsultantDetailsPage() {
           throw new Error('ID de consultant invalide')
         }
 
-        // Récupérer les données du RH et du consultant
-        const [rhData, consultantData] = await Promise.all([
-          RhAPI.me(),
-          ConsultantAPI.get(consultantId)
-        ])
+        // Invalider le cache pour s'assurer d'avoir les relations workType et leaveType
+        invalidateCache(`/consultants/${consultantId}`)
+        invalidateCache('/consultants') // Invalider aussi le cache général
         
+        // Récupérer les données du RH
+        const rhData = await RhAPI.me()
         setRh(rhData)
+        
+        // Forcer le rechargement sans cache en utilisant directement l'API pour le consultant
+        const { api } = await import('@/lib/api')
+        const response = await api.get(`/consultants/${consultantId}`)
+        
+        // Laravel peut retourner les données directement ou dans response.data
+        const consultantData = response.data?.data || response.data
         
         // Vérifier que le consultant appartient au même client
         if (consultantData.client_id !== rhData.client_id) {
           throw new Error('Vous n\'avez pas accès à ce consultant')
         }
         
+        // Laravel peut retourner workSchedules en camelCase ou work_schedules en snake_case
+        const consultantWorkSchedules = consultantData?.workSchedules || consultantData?.work_schedules || []
+        
+        console.log('✅ Consultant chargé (RH):', consultantData)
+        console.log('📊 WorkSchedules chargés (RH):', {
+          nombre: consultantWorkSchedules.length,
+          premier: consultantWorkSchedules[0] || null,
+          tous: consultantWorkSchedules
+        })
+        
         setConsultant(consultantData)
+        setWorkSchedules(consultantWorkSchedules)
       } catch (err: any) {
         console.error('Erreur lors du chargement du consultant:', err)
         setError(err.response?.data?.message || err.message || 'Erreur lors du chargement des données')
@@ -147,6 +181,134 @@ export default function ConsultantDetailsPage() {
       skillsArray = consultant.skills.split(',').map(s => s.trim()).filter(s => s.length > 0)
     }
   }
+
+  // Group work schedules by month and year
+  const groupWorkSchedulesByMonth = (): WorkLogEntry[] => {
+    if (!workSchedules || workSchedules.length === 0) {
+      console.log('⚠️ Aucun workSchedule à grouper (RH)')
+      return []
+    }
+    
+    console.log('🔄 Groupement de', workSchedules.length, 'workSchedules par mois (RH)')
+    
+    const grouped = workSchedules.reduce((acc, schedule) => {
+      try {
+        // Vérifier que le schedule a les données nécessaires
+        if (!schedule.date && !schedule.month && !schedule.year) {
+          console.warn('⚠️ Schedule sans date/mois/année (RH):', schedule)
+          return acc
+        }
+        
+        const date = schedule.date ? new Date(schedule.date) : new Date()
+        const month = schedule.month || date.getMonth() + 1
+        const year = schedule.year || date.getFullYear()
+        
+        // Vérifier que month et year sont valides
+        if (!month || !year || month < 1 || month > 12 || year < 2000 || year > 2100) {
+          console.warn('⚠️ Schedule avec mois/année invalide (RH):', { month, year, schedule })
+          return acc
+        }
+        
+        const monthKey = `${year}-${String(month).padStart(2, '0')}`
+      
+      if (!acc[monthKey]) {
+        acc[monthKey] = {
+          id: monthKey,
+          month,
+          year,
+          monthName: new Date(year, month - 1, 1).toLocaleDateString('fr-FR', { 
+            month: 'long', 
+            year: 'numeric' 
+          }),
+          daysWorked: 0,
+          weekendWork: 0,
+          absences: 0,
+          absenceType: '',
+          workType: '',
+          workTypeDays: 0
+        }
+      }
+      
+      acc[monthKey].daysWorked += schedule.days_worked || 0
+      acc[monthKey].weekendWork += schedule.weekend_worked || 0
+      acc[monthKey].absences += schedule.absence_days || 0
+      acc[monthKey].workTypeDays += schedule.work_type_days || 0
+      
+      // Collecter les types d'absence avec leave_type si disponible
+      if (schedule.absence_type && schedule.absence_type !== 'none') {
+        if (schedule.leave_type?.name) {
+          if (!acc[monthKey].absenceType.includes(schedule.leave_type.name)) {
+            acc[monthKey].absenceType = acc[monthKey].absenceType 
+              ? `${acc[monthKey].absenceType}, ${schedule.leave_type.name}`
+              : schedule.leave_type.name
+          }
+        } else if (!acc[monthKey].absenceType.includes(schedule.absence_type)) {
+          acc[monthKey].absenceType = acc[monthKey].absenceType 
+            ? `${acc[monthKey].absenceType}, ${schedule.absence_type}`
+            : schedule.absence_type
+        }
+      }
+      
+      if (schedule.work_type?.name && !acc[monthKey].workType.includes(schedule.work_type.name)) {
+        acc[monthKey].workType = acc[monthKey].workType 
+          ? `${acc[monthKey].workType}, ${schedule.work_type.name}`
+          : schedule.work_type.name
+      }
+      
+      return acc
+    } catch (error) {
+      console.error('❌ Erreur lors du groupement d\'un schedule (RH):', error, schedule)
+      return acc
+    }
+    }, {} as Record<string, WorkLogEntry>)
+    
+    const result = Object.values(grouped).sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year
+      return b.month - a.month
+    })
+    
+    console.log('✅ Groupement terminé (RH):', result.length, 'mois groupés')
+    console.log('📋 Résultat (RH):', result)
+    
+    return result
+  }
+
+  // Refresh work schedules
+  const refreshWorkSchedules = async () => {
+    if (!consultant) return
+    
+    try {
+      const consultantId = consultant.id
+      // Invalider le cache avant de recharger pour s'assurer d'avoir les relations
+      invalidateCache(`/consultants/${consultantId}`)
+      invalidateCache('/consultants')
+      
+      // Forcer le rechargement sans cache
+      const { api } = await import('@/lib/api')
+      const response = await api.get(`/consultants/${consultantId}`)
+      
+      // Laravel peut retourner les données directement ou dans response.data
+      const consultantData = response.data?.data || response.data
+      // Laravel peut retourner workSchedules en camelCase ou work_schedules en snake_case
+      const consultantWorkSchedules = consultantData?.workSchedules || consultantData?.work_schedules || []
+      
+      console.log('✅ WorkSchedules rafraîchis (RH):', {
+        nombre: consultantWorkSchedules.length,
+        workSchedules: consultantWorkSchedules
+      })
+      
+      setWorkSchedules(consultantWorkSchedules)
+    } catch (err: any) {
+      console.error('Erreur lors du rafraîchissement:', err)
+      console.error('Détails de l\'erreur:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status
+      })
+    }
+  }
+
+  const groupedWorkLogs = groupWorkSchedulesByMonth()
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -387,6 +549,124 @@ export default function ConsultantDetailsPage() {
             </motion.div>
           </div>
         </div>
+
+        {/* Journal de Travail Table */}
+        <div className="mt-8">
+          <motion.div 
+            className="bg-white rounded-lg shadow-sm border border-gray-200"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.6 }}
+          >
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Journal de Travail</h2>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Historique des heures travaillées par mois
+                  </p>
+                </div>
+                <motion.button
+                  onClick={refreshWorkSchedules}
+                  className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  title="Rafraîchir les données"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  <span>Actualiser</span>
+                </motion.button>
+              </div>
+            </div>
+              
+            <div className="overflow-x-auto">
+              <table className="w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Mois
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Jours travaillés
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Week-end travaillés
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Type d'absence
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Jours d'absence
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Type de travail
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Jours de type de travail
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {(() => {
+                    console.log('🔍 Rendu tableau RH - workSchedules:', {
+                      length: workSchedules.length,
+                      workSchedules: workSchedules,
+                      groupedLogs: groupedWorkLogs,
+                      groupedLogsLength: groupedWorkLogs.length
+                    })
+                    return null
+                  })()}
+                  {groupedWorkLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                        <div className="space-y-2">
+                          <p>Aucune donnée de travail disponible</p>
+                          <p className="text-xs text-gray-400">
+                            Consultant ID: {consultant?.id || 'N/A'} | 
+                            WorkSchedules dans le state: {workSchedules.length} | 
+                            {isLoading ? 'Chargement...' : 'Chargé'}
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    groupedWorkLogs.map((log) => (
+                      <motion.tr 
+                        key={log.id}
+                        className="hover:bg-gray-50"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {log.monthName}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          {log.daysWorked}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          {log.weekendWork > 0 ? log.weekendWork : '-'}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-700">
+                          {log.absenceType || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          {log.absences > 0 ? log.absences : '-'}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-700">
+                          {log.workType || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          {log.workTypeDays > 0 ? `${log.workTypeDays} jour(s)` : '-'}
+                        </td>
+                      </motion.tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </motion.div>
+        </div>
       </main>
 
       {/* Delete Consultant Modal */}
@@ -426,6 +706,10 @@ export default function ConsultantDetailsPage() {
     </div>
   )
 }
+
+
+
+
 
 
 

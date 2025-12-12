@@ -114,12 +114,56 @@ export const cachedGet = async <T>(url: string, ttl = CACHE_TTL): Promise<T> => 
   
   // Sinon, faire l'appel API
   console.log(`🌐 API CALL: ${url}`)
-  const response = await api.get<T>(url)
-  
-  // Mettre en cache
-  apiCache.set(url, { data: response.data, timestamp: now })
-  
-  return response.data
+  try {
+    const response = await api.get<T>(url)
+    
+    // Mettre en cache seulement si la réponse est réussie
+    if (response.data) {
+      apiCache.set(url, { data: response.data, timestamp: now })
+    }
+    
+    return response.data
+  } catch (error: any) {
+    // Ne pas mettre en cache les erreurs
+    // Améliorer le logging pour mieux capturer les détails
+    const errorDetails: any = {
+      url,
+      message: error?.message || 'Erreur inconnue',
+      name: error?.name,
+      code: error?.code,
+    }
+    
+    // Ajouter les détails de la réponse si disponibles
+    if (error?.response) {
+      errorDetails.status = error.response.status
+      errorDetails.statusText = error.response.statusText
+      errorDetails.headers = error.response.headers
+      
+      // Essayer de capturer les données de réponse de différentes manières
+      try {
+        errorDetails.data = error.response.data
+      } catch (e) {
+        errorDetails.dataError = 'Impossible de lire les données de réponse'
+      }
+      
+      // Si les données sont un objet, essayer de les sérialiser
+      if (error.response.data && typeof error.response.data === 'object') {
+        try {
+          errorDetails.dataString = JSON.stringify(error.response.data, null, 2)
+        } catch (e) {
+          errorDetails.dataString = 'Impossible de sérialiser les données'
+        }
+      }
+    } else if (error?.request) {
+      errorDetails.requestError = 'Aucune réponse reçue du serveur'
+      errorDetails.request = error.request
+    }
+    
+    console.error(`❌ Erreur API pour ${url}:`, errorDetails)
+    console.error('❌ Erreur complète:', error)
+    
+    throw error // Re-lancer l'erreur pour que le code appelant puisse la gérer
+  }
 }
 
 /**
@@ -353,7 +397,8 @@ export const FactureAPI = {
   get: (id: number) => api.get<Facture>(`/factures/${id}`),
   create: (data: Partial<Facture>) => api.post<Facture>('/factures', data),
   update: (id: number, data: Partial<Facture>) => api.put<Facture>(`/factures/${id}`, data),
-  delete: (id: number) => api.delete(`/factures/${id}`)
+  delete: (id: number) => api.delete(`/factures/${id}`),
+  sendEmail: (id: number) => api.post<{ success: boolean; message: string }>(`/factures/${id}/send-email`)
 }
 
 // Items d’une facture
@@ -414,6 +459,46 @@ export const WorkTypeAPI = {
 export const LeaveTypeAPI = {
   // Utilise le cache car ces données changent rarement
   all: () => cachedGet<ApiResponse<LeaveType[]>>('/leave-types', 30 * 60 * 1000) // Cache 30 minutes
+}
+
+// ========================
+//  SCHEDULE CONTESTS
+// ========================
+export interface ScheduleContest {
+  id: number
+  client_id: number
+  consultant_id: number
+  work_schedule_id: number
+  justification: string
+  status: 'pending' | 'resolved' | 'rejected'
+  created_at: string
+  updated_at: string
+  client?: Client
+  consultant?: Consultant
+  work_schedule?: WorkSchedule
+}
+
+export const ScheduleContestAPI = {
+  all: () => cachedGet<ApiResponse<ScheduleContest[]>>('/schedule-contests', 2 * 60 * 1000),
+  get: (id: number) => cachedGet<ScheduleContest>(`/schedule-contests/${id}`, 2 * 60 * 1000),
+  create: async (data: { work_schedule_id: number; justification: string }) => {
+    const result = await api.post<ScheduleContest>('/schedule-contests', data)
+    invalidateCache('/schedule-contests')
+    invalidateCache('/work-schedules')
+    return result
+  },
+  update: async (id: number, data: Partial<ScheduleContest>) => {
+    const result = await api.put<ScheduleContest>(`/schedule-contests/${id}`, data)
+    invalidateCache('/schedule-contests')
+    invalidateCache('/work-schedules')
+    return result
+  },
+  delete: async (id: number) => {
+    const result = await api.delete(`/schedule-contests/${id}`)
+    invalidateCache('/schedule-contests')
+    invalidateCache('/work-schedules')
+    return result
+  }
 }
 
 // ========================

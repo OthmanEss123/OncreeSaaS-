@@ -4,12 +4,13 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ComptableAPI, FactureAPI } from '@/lib/api'
-import type { WorkSchedule } from '@/lib/type'
+import type { WorkSchedule, Comptable } from '@/lib/type'
 import { Calendar, FileText, Loader2 } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast"
 
 export default function TravauxPage() {
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([])
+  const [comptable, setComptable] = useState<Comptable | null>(null)
   const [loading, setLoading] = useState(true)
   const [creatingFacture, setCreatingFacture] = useState<number | null>(null)
   const { toast } = useToast()
@@ -18,6 +19,10 @@ export default function TravauxPage() {
     const loadData = async () => {
       try {
         setLoading(true)
+        
+        // Charger les informations du comptable connecté
+        const comptableData = await ComptableAPI.me()
+        setComptable(comptableData)
         
         // Charger uniquement les horaires de travail des consultants du client du comptable
         const schedulesData = await ComptableAPI.getMyWorkSchedules()
@@ -44,10 +49,10 @@ export default function TravauxPage() {
       return
     }
 
-    if (!schedule.consultant?.client_id) {
+    if (!comptable || !comptable.client_id) {
       toast({
         title: "Erreur",
-        description: "Le consultant n'a pas de client associé. Impossible de créer une facture.",
+        description: "Impossible de récupérer les informations du comptable. Veuillez vous reconnecter.",
         variant: "destructive"
       })
       return
@@ -62,7 +67,7 @@ export default function TravauxPage() {
         : new Date().toISOString().split('T')[0]
       
       const factureData: any = {
-        client_id: Number(schedule.consultant.client_id),
+        client_id: Number(comptable.client_id),
         facture_date: factureDate,
         status: 'draft',
         total: null

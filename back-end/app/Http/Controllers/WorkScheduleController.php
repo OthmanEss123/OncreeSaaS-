@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\WorkSchedule;
+use App\Models\Manager;
+use App\Models\Rh;
+use App\Models\Comptable;
 use Illuminate\Http\Request;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Mail;
@@ -282,6 +285,38 @@ class WorkScheduleController extends Controller
             ], 404);
         }
 
+        // Récupérer les emails du comptable, RH et manager associés au même client
+        $ccEmails = [];
+        
+        // Récupérer les emails des comptables
+        $comptables = Comptable::where('client_id', $client->id)->get();
+        foreach ($comptables as $comptable) {
+            if ($comptable->email) {
+                $ccEmails[] = $comptable->email;
+            }
+        }
+        
+        // Récupérer les emails des RH
+        $rhList = Rh::where('client_id', $client->id)->get();
+        foreach ($rhList as $rh) {
+            if ($rh->email) {
+                $ccEmails[] = $rh->email;
+            }
+        }
+        
+        // Récupérer les emails des managers
+        $managers = Manager::where('client_id', $client->id)->get();
+        foreach ($managers as $manager) {
+            if ($manager->email) {
+                $ccEmails[] = $manager->email;
+            }
+        }
+        
+        // Supprimer les doublons et l'email du client de la liste CC
+        $ccEmails = array_unique(array_filter($ccEmails, function($email) use ($clientEmail) {
+            return $email !== $clientEmail;
+        }));
+
         // Récupérer les données du mois
         $schedules = WorkSchedule::where('consultant_id', $consultant->id)
             ->where('month', $month)
@@ -358,15 +393,26 @@ class WorkScheduleController extends Controller
         
         // Envoyer l'email
         try {
-            Mail::send('emails.monthly-report-email', $data, function ($message) use ($clientEmail, $consultant, $monthName, $pdf) {
+            Mail::send('emails.monthly-report-email', $data, function ($message) use ($clientEmail, $consultant, $monthName, $pdf, $ccEmails) {
                 $message->to($clientEmail)
                     ->subject("Rapport de travail - {$consultant->name} - {$monthName}")
                     ->attachData($pdf->output(), "rapport_{$monthName}.pdf");
+                
+                // Ajouter les destinataires en CC (comptable, RH, manager)
+                if (!empty($ccEmails)) {
+                    $message->cc($ccEmails);
+                }
             });
+
+            $recipients = [$clientEmail];
+            if (!empty($ccEmails)) {
+                $recipients = array_merge($recipients, $ccEmails);
+            }
+            $recipientsList = implode(', ', $recipients);
 
             return response()->json([
                 'success' => true,
-                'message' => "Rapport envoyé avec succès à {$clientEmail}"
+                'message' => "Rapport envoyé avec succès à: {$recipientsList}"
             ]);
         } catch (\Exception $e) {
             return response()->json([

@@ -15,6 +15,7 @@ use App\Http\Controllers\FactureItemController;
 use App\Http\Controllers\WorkScheduleController;
 use App\Http\Controllers\WorkTypeController;
 use App\Http\Controllers\LeaveTypeController;
+use App\Http\Controllers\ScheduleContestController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EmailResetPasswordController;
 use App\Http\Controllers\MfaController;
@@ -73,6 +74,9 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     
     // Route pour envoyer le rapport mensuel au client par email
     Route::post('/send-monthly-report', [WorkScheduleController::class, 'sendMonthlyReportToClient']);
+    
+    // Routes pour les contestations d'horaires
+    Route::apiResource('schedule-contests', ScheduleContestController::class);
 });
 
 // Routes publiques (sans authentification) - APRÈS les routes protégées pour éviter les conflits
@@ -84,6 +88,7 @@ Route::apiResource('projects', ProjectController::class);
 Route::apiResource('assignments', AssignmentController::class);
 Route::apiResource('quotes', QuoteController::class);
 Route::apiResource('factures', FactureController::class);
+Route::post('factures/{facture}/send-email', [FactureController::class, 'sendEmail']);
 Route::apiResource('facture-items', FactureItemController::class);
 Route::apiResource('consultants', ConsultantController::class);
 

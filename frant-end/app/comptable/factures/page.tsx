@@ -107,24 +107,26 @@ export default function FacturesPage() {
   }
 
   const handleSend = async (facture: Facture) => {
-    if (!confirm(`Voulez-vous envoyer la facture #${facture.id} au client ?`)) {
+    if (!confirm(`Voulez-vous envoyer la facture #${facture.id} par email au client ?`)) {
       return
     }
 
     try {
       setSendingId(facture.id)
-      await FactureAPI.update(facture.id, { status: 'sent' })
+      // Envoyer la facture par email avec PDF
+      const response = await FactureAPI.sendEmail(facture.id)
       toast({
         title: "Succès",
-        description: "Facture envoyée avec succès",
+        description: response.data?.message || "Facture envoyée par email avec succès",
       })
       // Recharger la liste
       loadFactures()
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur lors de l\'envoi:', error)
+      const errorMessage = error.response?.data?.message || "Impossible d'envoyer la facture par email"
       toast({
         title: "Erreur",
-        description: "Impossible d'envoyer la facture",
+        description: errorMessage,
         variant: "destructive"
       })
     } finally {

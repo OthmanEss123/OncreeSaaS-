@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
-import { ClientAPI, FactureAPI, FactureItemAPI } from '@/lib/api'
+import { ComptableAPI, FactureAPI, FactureItemAPI } from '@/lib/api'
 import type { Facture } from '@/lib/type'
 import { ArrowLeft, Save, Receipt } from 'lucide-react'
 
@@ -70,19 +70,19 @@ export default function AddFacturePage() {
     setSubmitting(true)
 
     try {
-      // Récupérer le premier client disponible (ou vous pouvez modifier pour sélectionner un client)
-      const clients = await ClientAPI.all()
-      if (clients.length === 0) {
+      // Récupérer le comptable connecté pour obtenir son client_id
+      const comptable = await ComptableAPI.me()
+      if (!comptable || !comptable.client_id) {
         toast({
           title: "Erreur",
-          description: "Aucun client disponible. Veuillez créer un client d'abord.",
+          description: "Impossible de récupérer les informations du comptable. Veuillez vous reconnecter.",
           variant: "destructive"
         })
         setSubmitting(false)
         return
       }
 
-      const clientId = clients[0].id
+      const clientId = comptable.client_id
       const total = calculateTotal()
       const today = new Date().toISOString().split('T')[0]
 
@@ -96,28 +96,129 @@ export default function AddFacturePage() {
         total: total
       }
 
-      const facture = await FactureAPI.create(factureData)
+      // Créer la facture via l'API
+      console.log('📤 Envoi des données de facture:', factureData)
+      const factureResponse = await FactureAPI.create(factureData)
+      console.log('📥 Réponse de l\'API facture:', factureResponse)
+      
+      // FactureAPI.create retourne une réponse axios, les données sont dans response.data
+      // Laravel retourne directement l'objet facture dans response.data
+      const facture = factureResponse.data
+      console.log('✅ Facture extraite:', facture)
+
+      // Vérifier que la facture a été créée avec un ID
+      if (!facture || !facture.id) {
+        console.error('❌ Facture créée sans ID:', { 
+          facture, 
+          factureResponse,
+          factureResponseData: factureResponse.data 
+        })
+        throw new Error('La facture n\'a pas été créée correctement. Aucun ID retourné.')
+      }
+      
+      console.log('✅ Facture créée avec succès, ID:', facture.id)
+
+      // Valider et convertir les valeurs numériques
+      const quantity = parseFloat(formData.working_days)
+      const unitPrice = parseFloat(formData.cost_per_day)
+
+      if (isNaN(quantity) || quantity <= 0) {
+        throw new Error('Le nombre de jours de travail doit être un nombre valide supérieur à 0')
+      }
+
+      if (isNaN(unitPrice) || unitPrice <= 0) {
+        throw new Error('Le coût par jour doit être un nombre valide supérieur à 0')
+      }
+
+      // Préparer les données de l'item
+      const itemData = {
+        facture_id: Number(facture.id),
+        description: `Travail de ${formData.consultant_name} - ${formData.working_days} jour(s) - Mois: ${formData.working_month}`,
+        quantity: quantity,
+        unit_price: unitPrice
+      }
+
+      console.log('📤 Création de l\'item de facture avec les données:', itemData)
 
       // Créer l'item de la facture avec les détails
-      await FactureItemAPI.create({
-        facture_id: facture.id,
-        description: `Travail de ${formData.consultant_name} - ${formData.working_days} jour(s) - Mois: ${formData.working_month}`,
-        quantity: parseFloat(formData.working_days),
-        unit_price: parseFloat(formData.cost_per_day)
-      })
+      try {
+        const itemResponse = await FactureItemAPI.create(itemData)
+        console.log('✅ Item créé avec succès:', itemResponse.data)
+      } catch (itemError: any) {
+        console.error('❌ Erreur lors de la création de l\'item:', itemError)
+        console.error('❌ Détails de l\'erreur item:', {
+          status: itemError.response?.status,
+          data: itemError.response?.data,
+          message: itemError.message
+        })
+        // Si la facture a été créée mais l'item a échoué, on informe l'utilisateur
+        // mais on ne supprime pas la facture (elle peut être complétée plus tard)
+        toast({
+          title: "Attention",
+          description: `Facture créée (ID: ${facture.id}) mais l'item n'a pas pu être ajouté. Vous pouvez l'ajouter manuellement.`,
+          variant: "default"
+        })
+        router.push(`/comptable/factures/edit/${facture.id}`)
+        return
+      }
 
       toast({
         title: "Succès",
-        description: "Facture créée avec succès",
+        description: `Facture #${facture.id} créée avec succès`,
       })
 
-      router.push('/comptable')
+      // Rediriger vers la page des factures pour voir la nouvelle facture
+      router.push('/comptable/factures')
     } catch (error: any) {
-      console.error('Erreur lors de la création de la facture:', error)
+      console.error('❌ Erreur lors de la création de la facture:', error)
+      console.error('❌ Détails de l\'erreur:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        requestData: error.config?.data
+      })
+      
+      // Extraire les détails de l'erreur de validation
+      let errorMessage = "Erreur lors de la création de la facture"
+      
+      if (error.response?.status === 422) {
+        // Erreur de validation
+        const errors = error.response?.data?.errors
+        if (errors) {
+          // Formater les erreurs de validation Laravel
+          const errorMessages = Object.entries(errors)
+            .map(([field, messages]: [string, any]) => {
+              const fieldName = field === 'facture_id' ? 'Facture' : 
+                               field === 'quantity' ? 'Quantité' :
+                               field === 'unit_price' ? 'Prix unitaire' :
+                               field === 'description' ? 'Description' :
+                               field === 'client_id' ? 'Client' :
+                               field === 'facture_date' ? 'Date de facture' : field
+              return `${fieldName}: ${Array.isArray(messages) ? messages.join(', ') : messages}`
+            })
+            .join(' | ')
+          errorMessage = `Erreur de validation: ${errorMessages}`
+        } else if (error.response?.data?.message) {
+          errorMessage = error.response.data.message
+        } else {
+          errorMessage = `Erreur de validation (422). Vérifiez la console pour plus de détails.`
+        }
+      } else if (error.response?.status === 401) {
+        errorMessage = "Vous n'êtes pas authentifié. Veuillez vous reconnecter."
+      } else if (error.response?.status === 500) {
+        errorMessage = "Erreur serveur. Veuillez réessayer plus tard."
+      } else if (error.message) {
+        errorMessage = error.message
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message
+      }
+      
       toast({
         title: "Erreur",
-        description: error.response?.data?.message || "Erreur lors de la création de la facture",
-        variant: "destructive"
+        description: errorMessage,
+        variant: "destructive",
+        duration: 10000 // Afficher plus longtemps pour que l'utilisateur puisse lire
       })
     } finally {
       setSubmitting(false)
