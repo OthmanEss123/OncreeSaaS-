@@ -34,6 +34,11 @@ class LeaveType extends Model
         return $this->hasMany(WorkSchedule::class);
     }
 
+    public function conges()
+    {
+        return $this->hasMany(Conge::class);
+    }
+
     // Scopes
     public function scopeActive($query)
     {

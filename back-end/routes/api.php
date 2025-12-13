@@ -16,6 +16,7 @@ use App\Http\Controllers\WorkScheduleController;
 use App\Http\Controllers\WorkTypeController;
 use App\Http\Controllers\LeaveTypeController;
 use App\Http\Controllers\ScheduleContestController;
+use App\Http\Controllers\CongeController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EmailResetPasswordController;
 use App\Http\Controllers\MfaController;
@@ -77,6 +78,11 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     
     // Routes pour les contestations d'horaires
     Route::apiResource('schedule-contests', ScheduleContestController::class);
+    
+    // Routes pour les congés
+    Route::get('/my-conges', [CongeController::class, 'myConges']); // Congés du consultant connecté
+    Route::get('/rh/pending-conges', [CongeController::class, 'pendingConges']); // Congés en attente pour RH
+    Route::apiResource('conges', CongeController::class);
 });
 
 // Routes publiques (sans authentification) - APRÈS les routes protégées pour éviter les conflits

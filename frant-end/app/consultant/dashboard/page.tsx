@@ -24,7 +24,8 @@ import {
   Edit,
   Upload,
   Send,
-  LogOut
+  LogOut,
+  CalendarDays
 } from 'lucide-react'
 
 // TypeScript Interfaces
@@ -951,6 +952,15 @@ export default function UserDashboard() {
                     title="Rafraîchir les données">
                     <RefreshCw className="h-4 w-4" />
                     <span>Actualiser</span>
+                  </motion.button>
+                  <motion.button
+                    onClick={() => router.push('/consultant/conges')}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    title="Gérer mes congés">
+                    <CalendarDays className="h-4 w-4" />
+                    <span>Congés</span>
                   </motion.button>
                   <motion.button
                     onClick={() => router.push('/consultant/timesheet')}

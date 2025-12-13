@@ -12,7 +12,8 @@ import type {
   FactureItem,
   WorkSchedule,
   WorkType,
-  LeaveType
+  LeaveType,
+  Conge
 } from '@/lib/type'
 
 // Types pour les réponses API
@@ -459,6 +460,50 @@ export const WorkTypeAPI = {
 export const LeaveTypeAPI = {
   // Utilise le cache car ces données changent rarement
   all: () => cachedGet<ApiResponse<LeaveType[]>>('/leave-types', 30 * 60 * 1000) // Cache 30 minutes
+}
+
+// ========================
+//  CONGES (LEAVES)
+// ========================
+export const CongeAPI = {
+  // Récupérer tous les congés (pour RH/Admin)
+  all: () => cachedGet<ApiResponse<Conge[]>>('/conges', 2 * 60 * 1000),
+  
+  // Récupérer les congés du consultant connecté
+  mine: () => cachedGet<ApiResponse<Conge[]>>('/my-conges', 2 * 60 * 1000),
+  
+  // Récupérer les congés en attente (pour RH)
+  pending: () => cachedGet<ApiResponse<Conge[]>>('/rh/pending-conges', 1 * 60 * 1000),
+  
+  // Récupérer un congé spécifique
+  get: (id: number) => cachedGet<ApiResponse<Conge>>(`/conges/${id}`, 2 * 60 * 1000),
+  
+  // Créer une demande de congé (consultant)
+  create: async (data: { start_date: string; end_date: string; leave_type_id?: number | null; reason?: string | null }) => {
+    const result = await api.post<ApiResponse<Conge>>('/conges', data)
+    invalidateCache('/conges')
+    invalidateCache('/my-conges')
+    invalidateCache('/rh/pending-conges')
+    return result
+  },
+  
+  // Mettre à jour le statut d'un congé (RH)
+  update: async (id: number, data: { status: 'approved' | 'rejected'; rh_comment?: string | null }) => {
+    const result = await api.put<ApiResponse<Conge>>(`/conges/${id}`, data)
+    invalidateCache('/conges')
+    invalidateCache('/my-conges')
+    invalidateCache('/rh/pending-conges')
+    return result
+  },
+  
+  // Supprimer une demande de congé (consultant, uniquement si pending)
+  delete: async (id: number) => {
+    const result = await api.delete(`/conges/${id}`)
+    invalidateCache('/conges')
+    invalidateCache('/my-conges')
+    invalidateCache('/rh/pending-conges')
+    return result
+  }
 }
 
 // ========================

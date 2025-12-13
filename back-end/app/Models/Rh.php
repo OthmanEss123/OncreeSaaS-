@@ -15,6 +15,7 @@ class Rh extends Authenticatable
     protected $hidden   = ['password'];
     protected $table = 'rh';       // nom de la table dans la base de données
     public function client() { return $this->belongsTo(Client::class); }
+    public function conges() { return $this->hasMany(Conge::class); }
 
     public function twoFactorSetting()
     {

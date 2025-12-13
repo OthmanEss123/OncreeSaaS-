@@ -31,6 +31,7 @@ class Consultant extends Authenticatable
     public function assignments() { return $this->hasMany(Assignment::class); }
     public function workSchedules(){ return $this->hasMany(WorkSchedule::class); }
     public function factures()    { return $this->hasMany(Facture::class); }
+    public function conges()      { return $this->hasMany(Conge::class); }
     public function project()
 {
     return $this->belongsTo(Project::class);

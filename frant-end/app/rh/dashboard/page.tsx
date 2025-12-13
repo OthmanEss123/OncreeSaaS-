@@ -19,7 +19,8 @@ import {
   RefreshCw,
   UserPlus,
   Eye,
-  Edit
+  Edit,
+  CalendarDays
 } from 'lucide-react'
 
 export default function RHDashboard() {
@@ -138,16 +139,28 @@ export default function RHDashboard() {
               </div>
             </div>
             
-            {/* Bouton actualiser */}
-            <motion.button
-              onClick={loadDashboardData}
-              className="flex items-center space-x-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <RefreshCw className="h-4 w-4" />
-              <span>Actualiser</span>
-            </motion.button>
+            {/* Boutons d'action */}
+            <div className="flex items-center space-x-3">
+              <motion.button
+                onClick={() => router.push('/rh/conges')}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                title="Gérer les congés"
+              >
+                <CalendarDays className="h-4 w-4" />
+                <span>Congés</span>
+              </motion.button>
+              <motion.button
+                onClick={loadDashboardData}
+                className="flex items-center space-x-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <RefreshCw className="h-4 w-4" />
+                <span>Actualiser</span>
+              </motion.button>
+            </div>
           </div>
         </div>
       </header>

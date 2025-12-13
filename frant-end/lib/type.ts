@@ -187,3 +187,21 @@ export interface WorkSchedule {
   leave_type?: LeaveType;
 }
 
+export interface Conge {
+  id: number;
+  consultant_id: number;
+  start_date: string;
+  end_date: string;
+  leave_type_id: number | null;
+  reason: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  rh_id: number | null;
+  rh_comment: string | null;
+  processed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  consultant?: Consultant;
+  leave_type?: LeaveType;
+  rh?: Rh;
+}
+
