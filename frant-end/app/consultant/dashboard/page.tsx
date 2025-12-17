@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { getCurrentDateKey } from '@/lib/date-utils'
 import { ConsultantAPI, WorkScheduleAPI, WorkTypeAPI, LeaveTypeAPI, DashboardAPI } from '@/lib/api'
 import type { Consultant, Project as ProjectType, WorkSchedule, WorkType, LeaveType } from '@/lib/type'
@@ -25,7 +25,9 @@ import {
   Upload,
   Send,
   LogOut,
-  CalendarDays
+  CalendarDays,
+  PenTool,
+  CheckCircle
 } from 'lucide-react'
 
 // TypeScript Interfaces
@@ -94,6 +96,7 @@ const mockWorkTypes = [
 
 export default function UserDashboard() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [consultant, setConsultant] = useState<Consultant | null>(null)
   const [project, setProject] = useState<ProjectType | null>(null)
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([])
@@ -104,6 +107,7 @@ export default function UserDashboard() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [signedCRAs, setSignedCRAs] = useState<Record<string, { signed_at: string }>>({})
   
   const [workEntry, setWorkEntry] = useState<WorkEntryForm>({
     date: getCurrentDateKey(),
@@ -604,6 +608,11 @@ export default function UserDashboard() {
     }
   };
 
+  // Rediriger vers la page de signature du CRA
+  const handleSignCRA = (log: WorkLog) => {
+    router.push(`/consultant/sign-cra?month=${log.month}&year=${log.year}`)
+  };
+
   // Load data from backend on component mount (seulement si workSchedules est vide)
   useEffect(() => {
     // Si workSchedules est vide, essayer de charger depuis l'endpoint groupé
@@ -621,6 +630,60 @@ export default function UserDashboard() {
       setWorkLogs(groupedByMonth)
     }
   }, [])
+
+  // Vérifier les signatures des CRA au chargement
+  useEffect(() => {
+    const checkSignatures = async () => {
+      if (workLogs.length > 0) {
+        const signatures: Record<string, { signed_at: string }> = {};
+        for (const log of workLogs) {
+          try {
+            const result = await WorkScheduleAPI.checkCRASignature(log.month, log.year);
+            // result contient directement { success, is_signed, signature }
+            if (result.is_signed && result.signature) {
+              const key = `${log.year}-${log.month}`;
+              signatures[key] = { signed_at: result.signature.signed_at };
+            }
+          } catch (error) {
+            console.error(`Erreur lors de la vérification de la signature pour ${log.month}/${log.year}:`, error);
+          }
+        }
+        setSignedCRAs(signatures);
+      }
+    };
+
+    checkSignatures();
+  }, [workLogs])
+
+  // Vérifier si on revient de la page de signature avec succès
+  useEffect(() => {
+    const signed = searchParams.get('signed')
+    if (signed === 'true') {
+      // Rafraîchir les signatures
+      const refreshSignatures = async () => {
+        if (workLogs.length > 0) {
+          const signatures: Record<string, { signed_at: string }> = {};
+          for (const log of workLogs) {
+            try {
+              const result = await WorkScheduleAPI.checkCRASignature(log.month, log.year);
+              if (result.is_signed && result.signature) {
+                const key = `${log.year}-${log.month}`;
+                signatures[key] = { signed_at: result.signature.signed_at };
+              }
+            } catch (error) {
+              console.error(`Erreur lors de la vérification de la signature pour ${log.month}/${log.year}:`, error);
+            }
+          }
+          setSignedCRAs(signatures);
+        }
+        // Afficher un message de succès
+        alert('✅ CRA signé avec succès !')
+        // Nettoyer l'URL
+        router.replace('/consultant/dashboard')
+      }
+      refreshSignatures()
+    }
+  }, [searchParams, workLogs, router])
 
   // Listen for focus events to refresh data when user returns to tab
   useEffect(() => {
@@ -1006,63 +1069,88 @@ export default function UserDashboard() {
                   </tr>
                 </thead>
                 <tbody className="bg-card divide-y divide-border">
-                  {groupedWorkLogs.map((log) => (
-                    <motion.tr 
-                      key={log.id}
-                      className="hover:bg-muted/50"
-                      whileHover={{ backgroundColor: 'hsl(var(--muted) / 0.5)' }}
-                      transition={{ duration: 0.2 }}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
-                        {log.monthName || new Date(log.year, log.month - 1, 1).toLocaleDateString('fr-FR', { 
-                          month: 'long', 
-                          year: 'numeric' 
-                        })}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
-                        {log.daysWorked}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
-                        {log.weekendWork > 0 ? log.weekendWork : '-'}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-card-foreground">
-                        {log.absenceType || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
-                        {log.absences > 0 ? log.absences : '-'}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-card-foreground">
-                        {log.workType}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
-                        {(log.workTypeDays || 0) > 0 ? `${log.workTypeDays} jour(s)` : '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
-                        <div className="flex space-x-2">
-                          {/* Bouton Modifier */}
-                          <motion.button
-                            onClick={() => handleEditWorkLog(log)}
-                            className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-1 text-sm font-medium"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            title="Modifier les jours de ce mois">
-                            <Upload className="h-4 w-4" />
-                            <span>Modifier</span>
-                          </motion.button>
-                          
-                          {/* Bouton Envoyer par email */}
-                          <motion.button
-                            onClick={() => handleSendReport(log)}
-                            className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-1 text-sm font-medium"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            title="Envoyer le rapport au client, comptable, RH et manager par email">
-                            <Send className="h-4 w-4" />
-                            <span>Envoyer</span>
-                          </motion.button>
-                        </div>
-                      </td>
-                    </motion.tr>
-                  ))}
+                  {groupedWorkLogs.map((log) => {
+                    const signatureKey = `${log.year}-${log.month}`;
+                    const isSigned = signedCRAs[signatureKey] !== undefined;
+                    
+                    return (
+                      <motion.tr 
+                        key={log.id}
+                        className="hover:bg-muted/50"
+                        whileHover={{ backgroundColor: 'hsl(var(--muted) / 0.5)' }}
+                        transition={{ duration: 0.2 }}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
+                          {log.monthName || new Date(log.year, log.month - 1, 1).toLocaleDateString('fr-FR', { 
+                            month: 'long', 
+                            year: 'numeric' 
+                          })}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
+                          {log.daysWorked}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
+                          {log.weekendWork > 0 ? log.weekendWork : '-'}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-card-foreground">
+                          {log.absenceType || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
+                          {log.absences > 0 ? log.absences : '-'}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-card-foreground">
+                          {log.workType}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
+                          {(log.workTypeDays || 0) > 0 ? `${log.workTypeDays} jour(s)` : '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
+                          <div className="flex flex-wrap gap-2">
+                            {/* Bouton Modifier */}
+                            <motion.button
+                              onClick={() => handleEditWorkLog(log)}
+                              className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-1 text-sm font-medium"
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              title="Modifier les jours de ce mois">
+                              <Upload className="h-4 w-4" />
+                              <span>Modifier</span>
+                            </motion.button>
+                            
+                            {/* Bouton Signer le CRA */}
+                            {isSigned ? (
+                              <motion.div
+                                className="bg-purple-600 text-white px-3 py-2 rounded-lg flex items-center space-x-1 text-sm font-medium cursor-default"
+                                title={`CRA signé le ${signedCRAs[signatureKey].signed_at}`}>
+                                <CheckCircle className="h-4 w-4" />
+                                <span>Signé</span>
+                              </motion.div>
+                            ) : (
+                              <motion.button
+                                onClick={() => handleSignCRA(log)}
+                                className="bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-1 text-sm font-medium"
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                title="Signer le CRA de ce mois">
+                                <PenTool className="h-4 w-4" />
+                                <span>Signer</span>
+                              </motion.button>
+                            )}
+                            
+                            {/* Bouton Envoyer par email */}
+                            <motion.button
+                              onClick={() => handleSendReport(log)}
+                              className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-1 text-sm font-medium"
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              title="Envoyer le rapport au client, comptable, RH et manager par email">
+                              <Send className="h-4 w-4" />
+                              <span>Envoyer</span>
+                            </motion.button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

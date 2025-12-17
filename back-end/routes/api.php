@@ -76,6 +76,10 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     // Route pour envoyer le rapport mensuel au client par email
     Route::post('/send-monthly-report', [WorkScheduleController::class, 'sendMonthlyReportToClient']);
     
+    // Routes pour la signature de CRA
+    Route::post('/sign-cra', [WorkScheduleController::class, 'signCRA']);
+    Route::get('/check-cra-signature', [WorkScheduleController::class, 'checkCRASignature']);
+    
     // Routes pour les contestations d'horaires
     Route::apiResource('schedule-contests', ScheduleContestController::class);
     

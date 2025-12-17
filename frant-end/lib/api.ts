@@ -443,6 +443,24 @@ export const WorkScheduleAPI = {
     invalidateCache('/work-logs-grouped')
     invalidateCache('/consultant/dashboard-data')
     return result
+  },
+  // Signer un CRA mensuel
+  signCRA: async (month: number, year: number, signatureData?: string) => {
+    const result = await api.post<ApiResponse<{ signature: any; signed_at: string }>>('/sign-cra', { 
+      month, 
+      year,
+      signature_data: signatureData 
+    })
+    invalidateCache('/work-logs-grouped')
+    return result
+  },
+  // Vérifier si un CRA est signé
+  checkCRASignature: async (month: number, year: number) => {
+    const response = await api.get<{ success: boolean; is_signed: boolean; signature: { signed_at: string; created_at: string } | null }>('/check-cra-signature', {
+      params: { month, year }
+    })
+    // Le backend retourne directement { success, is_signed, signature }
+    return response.data
   }
 }
 

@@ -3,9 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\WorkSchedule;
-use App\Models\Manager;
-use App\Models\Rh;
-use App\Models\Comptable;
+use App\Models\CraSignature;
 use Illuminate\Http\Request;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Mail;
@@ -285,38 +283,6 @@ class WorkScheduleController extends Controller
             ], 404);
         }
 
-        // Récupérer les emails du comptable, RH et manager associés au même client
-        $ccEmails = [];
-        
-        // Récupérer les emails des comptables
-        $comptables = Comptable::where('client_id', $client->id)->get();
-        foreach ($comptables as $comptable) {
-            if ($comptable->email) {
-                $ccEmails[] = $comptable->email;
-            }
-        }
-        
-        // Récupérer les emails des RH
-        $rhList = Rh::where('client_id', $client->id)->get();
-        foreach ($rhList as $rh) {
-            if ($rh->email) {
-                $ccEmails[] = $rh->email;
-            }
-        }
-        
-        // Récupérer les emails des managers
-        $managers = Manager::where('client_id', $client->id)->get();
-        foreach ($managers as $manager) {
-            if ($manager->email) {
-                $ccEmails[] = $manager->email;
-            }
-        }
-        
-        // Supprimer les doublons et l'email du client de la liste CC
-        $ccEmails = array_unique(array_filter($ccEmails, function($email) use ($clientEmail) {
-            return $email !== $clientEmail;
-        }));
-
         // Récupérer les données du mois
         $schedules = WorkSchedule::where('consultant_id', $consultant->id)
             ->where('month', $month)
@@ -393,26 +359,15 @@ class WorkScheduleController extends Controller
         
         // Envoyer l'email
         try {
-            Mail::send('emails.monthly-report-email', $data, function ($message) use ($clientEmail, $consultant, $monthName, $pdf, $ccEmails) {
+            Mail::send('emails.monthly-report-email', $data, function ($message) use ($clientEmail, $consultant, $monthName, $pdf) {
                 $message->to($clientEmail)
                     ->subject("Rapport de travail - {$consultant->name} - {$monthName}")
                     ->attachData($pdf->output(), "rapport_{$monthName}.pdf");
-                
-                // Ajouter les destinataires en CC (comptable, RH, manager)
-                if (!empty($ccEmails)) {
-                    $message->cc($ccEmails);
-                }
             });
-
-            $recipients = [$clientEmail];
-            if (!empty($ccEmails)) {
-                $recipients = array_merge($recipients, $ccEmails);
-            }
-            $recipientsList = implode(', ', $recipients);
 
             return response()->json([
                 'success' => true,
-                'message' => "Rapport envoyé avec succès à: {$recipientsList}"
+                'message' => "Rapport envoyé avec succès à {$clientEmail}"
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -420,5 +375,81 @@ class WorkScheduleController extends Controller
                 'message' => 'Erreur lors de l\'envoi de l\'email: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Signer un CRA mensuel
+     */
+    public function signCRA(Request $request)
+    {
+        $request->validate([
+            'month' => 'required|integer|min:1|max:12',
+            'year' => 'required|integer|min:2020|max:2030',
+            'signature_data' => 'required|string'
+        ]);
+
+        $consultant = $request->user();
+        $month = $request->month;
+        $year = $request->year;
+
+        // Vérifier si une signature existe déjà pour ce mois/année
+        $existingSignature = CraSignature::where('consultant_id', $consultant->id)
+            ->where('month', $month)
+            ->where('year', $year)
+            ->first();
+
+        if ($existingSignature) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ce CRA a déjà été signé'
+            ], 400);
+        }
+
+        // Créer la signature
+        $signature = CraSignature::create([
+            'consultant_id' => $consultant->id,
+            'month' => $month,
+            'year' => $year,
+            'signature_data' => $request->signature_data,
+            'signed_at' => now()
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'CRA signé avec succès',
+            'data' => [
+                'signature' => $signature,
+                'signed_at' => $signature->signed_at
+            ]
+        ]);
+    }
+
+    /**
+     * Vérifier si un CRA est signé
+     */
+    public function checkCRASignature(Request $request)
+    {
+        $request->validate([
+            'month' => 'required|integer|min:1|max:12',
+            'year' => 'required|integer|min:2020|max:2030'
+        ]);
+
+        $consultant = $request->user();
+        $month = $request->month;
+        $year = $request->year;
+
+        $signature = CraSignature::where('consultant_id', $consultant->id)
+            ->where('month', $month)
+            ->where('year', $year)
+            ->first();
+
+        return response()->json([
+            'success' => true,
+            'is_signed' => $signature !== null,
+            'signature' => $signature ? [
+                'signed_at' => $signature->signed_at,
+                'created_at' => $signature->created_at
+            ] : null
+        ]);
     }
 }
