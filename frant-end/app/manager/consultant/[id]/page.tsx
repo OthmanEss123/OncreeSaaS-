@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
 import { useAuth } from '@/hooks/use-auth'
-import { ConsultantAPI, invalidateCache } from '@/lib/api'
+import { ConsultantAPI, WorkScheduleAPI, invalidateCache } from '@/lib/api'
 import type { Consultant, WorkSchedule } from '@/lib/type'
 import { 
   ArrowLeft, 
@@ -22,7 +22,8 @@ import {
   CheckCircle,
   XCircle,
   Code,
-  RefreshCw
+  RefreshCw,
+  PenTool
 } from 'lucide-react'
 
 export default function ConsultantDetailsPage() {
@@ -35,6 +36,11 @@ export default function ConsultantDetailsPage() {
   const [error, setError] = useState<string | null>(null)
   const [consultant, setConsultant] = useState<Consultant | null>(null)
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([])
+  const [signedCRAs, setSignedCRAs] = useState<Record<string, {
+    consultant?: { signed_at: string };
+    client?: { signed_at: string };
+    manager?: { signed_at: string };
+  }>>({})
 
   // Interface for grouped work log entries
   interface WorkLogEntry {
@@ -49,6 +55,86 @@ export default function ConsultantDetailsPage() {
     workType: string
     workTypeDays: number
   }
+
+  // Utiliser useMemo pour groupedWorkLogs pour éviter les recalculs inutiles
+  // Doit être appelé avant tous les useEffect pour respecter l'ordre des hooks
+  const groupedWorkLogs = useMemo(() => {
+    if (!workSchedules || workSchedules.length === 0) {
+      return []
+    }
+    
+    const grouped = workSchedules.reduce((acc, schedule) => {
+      try {
+        if (!schedule.date && !schedule.month && !schedule.year) {
+          return acc
+        }
+        
+        const date = schedule.date ? new Date(schedule.date) : new Date()
+        const month = schedule.month || date.getMonth() + 1
+        const year = schedule.year || date.getFullYear()
+        
+        if (!month || !year || month < 1 || month > 12 || year < 2000 || year > 2100) {
+          return acc
+        }
+        
+        const monthKey = `${year}-${String(month).padStart(2, '0')}`
+      
+        if (!acc[monthKey]) {
+          acc[monthKey] = {
+            id: monthKey,
+            month,
+            year,
+            monthName: new Date(year, month - 1, 1).toLocaleDateString('fr-FR', { 
+              month: 'long', 
+              year: 'numeric' 
+            }),
+            daysWorked: 0,
+            weekendWork: 0,
+            absences: 0,
+            absenceType: '',
+            workType: '',
+            workTypeDays: 0
+          }
+        }
+        
+        acc[monthKey].daysWorked += schedule.days_worked || 0
+        acc[monthKey].weekendWork += schedule.weekend_worked || 0
+        acc[monthKey].absences += schedule.absence_days || 0
+        acc[monthKey].workTypeDays += schedule.work_type_days || 0
+        
+        if (schedule.absence_type && !acc[monthKey].absenceType.includes(schedule.absence_type)) {
+          acc[monthKey].absenceType = acc[monthKey].absenceType 
+            ? `${acc[monthKey].absenceType}, ${schedule.absence_type}`
+            : schedule.absence_type
+        }
+        
+        if (schedule.work_type?.name && !acc[monthKey].workType.includes(schedule.work_type.name)) {
+          acc[monthKey].workType = acc[monthKey].workType 
+            ? `${acc[monthKey].workType}, ${schedule.work_type.name}`
+            : schedule.work_type.name
+        }
+        
+        if (schedule.absence_type && schedule.absence_type !== 'none') {
+          if (schedule.leave_type?.name) {
+            if (!acc[monthKey].absenceType.includes(schedule.leave_type.name)) {
+              acc[monthKey].absenceType = acc[monthKey].absenceType 
+                ? `${acc[monthKey].absenceType}, ${schedule.leave_type.name}`
+                : schedule.leave_type.name
+            }
+          }
+        }
+        
+        return acc
+      } catch (error) {
+        return acc
+      }
+    }, {} as Record<string, WorkLogEntry>)
+    
+    return Object.values(grouped).sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year
+      return b.month - a.month
+    })
+  }, [workSchedules])
 
   // Redirection si pas authentifié
   useEffect(() => {
@@ -105,7 +191,56 @@ export default function ConsultantDetailsPage() {
     }
   }, [params.id, authLoading, isAuthenticated])
 
-  // Action handlers
+  // Vérifier les signatures des CRA - DOIT être avant tous les early returns
+  useEffect(() => {
+    const checkSignatures = async () => {
+      if (!consultant || groupedWorkLogs.length === 0) {
+        return
+      }
+
+      try {
+        const periods = groupedWorkLogs.map(log => ({ month: log.month, year: log.year }))
+        const result = await WorkScheduleAPI.checkCRASignatures(periods, consultant.id)
+        
+        // Transformer le résultat en format attendu
+        const signatures: Record<string, {
+          consultant?: { signed_at: string };
+          client?: { signed_at: string };
+          manager?: { signed_at: string };
+        }> = {}
+        
+        Object.entries(result.signatures).forEach(([key, value]) => {
+          signatures[key] = {}
+          if (value.consultant) {
+            signatures[key].consultant = { signed_at: value.consultant.signed_at }
+          }
+          if (value.client) {
+            signatures[key].client = { signed_at: value.client.signed_at }
+          }
+          if (value.manager) {
+            signatures[key].manager = { signed_at: value.manager.signed_at }
+          }
+        })
+        
+        setSignedCRAs(signatures)
+      } catch (error) {
+        console.error('Erreur lors de la vérification des signatures:', error)
+      }
+    }
+
+    checkSignatures()
+
+    // Re-vérifier les signatures si on revient de la page de signature
+    const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.get('signed') === 'true') {
+      checkSignatures().then(() => {
+        // Nettoyer l'URL après la vérification
+        window.history.replaceState({}, '', window.location.pathname)
+      })
+    }
+  }, [consultant, groupedWorkLogs])
+
+  // Action handlers - après tous les hooks
   const handleEditConsultant = () => {
     if (consultant) {
       router.push(`/manager/consultant/${consultant.id}/edit`)
@@ -129,12 +264,32 @@ export default function ConsultantDetailsPage() {
     }
   }
 
-  // Si pas authentifié, ne rien afficher pendant la redirection
+  // Refresh work schedules
+  const refreshWorkSchedules = async () => {
+    if (!consultant) return
+    
+    try {
+      const consultantId = consultant.id
+      invalidateCache(`/consultants/${consultantId}`)
+      invalidateCache('/consultants')
+      
+      const { api } = await import('@/lib/api')
+      const response = await api.get(`/consultants/${consultantId}`)
+      
+      const consultantData = response.data?.data || response.data
+      const consultantWorkSchedules = consultantData?.workSchedules || consultantData?.work_schedules || []
+      
+      setWorkSchedules(consultantWorkSchedules)
+    } catch (err: any) {
+      console.error('Erreur lors du rafraîchissement:', err)
+    }
+  }
+
+  // Early returns - APRÈS tous les hooks
   if (!authLoading && !isAuthenticated) {
     return null
   }
 
-  // Show loading state
   if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -146,7 +301,6 @@ export default function ConsultantDetailsPage() {
     )
   }
 
-  // Show error state
   if (error || !consultant) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -175,136 +329,6 @@ export default function ConsultantDetailsPage() {
       skillsArray = consultant.skills.split(',').map(s => s.trim()).filter(s => s.length > 0)
     }
   }
-
-  // Group work schedules by month and year
-  const groupWorkSchedulesByMonth = (): WorkLogEntry[] => {
-    if (!workSchedules || workSchedules.length === 0) {
-      console.log('⚠️ Aucun workSchedule à grouper (Manager)')
-      return []
-    }
-    
-    console.log('🔄 Groupement de', workSchedules.length, 'workSchedules par mois (Manager)')
-    
-    const grouped = workSchedules.reduce((acc, schedule) => {
-      try {
-        // Vérifier que le schedule a les données nécessaires
-        if (!schedule.date && !schedule.month && !schedule.year) {
-          console.warn('⚠️ Schedule sans date/mois/année (Manager):', schedule)
-          return acc
-        }
-        
-        const date = schedule.date ? new Date(schedule.date) : new Date()
-        const month = schedule.month || date.getMonth() + 1
-        const year = schedule.year || date.getFullYear()
-        
-        // Vérifier que month et year sont valides
-        if (!month || !year || month < 1 || month > 12 || year < 2000 || year > 2100) {
-          console.warn('⚠️ Schedule avec mois/année invalide (Manager):', { month, year, schedule })
-          return acc
-        }
-        
-        const monthKey = `${year}-${String(month).padStart(2, '0')}`
-      
-      if (!acc[monthKey]) {
-        acc[monthKey] = {
-          id: monthKey,
-          month,
-          year,
-          monthName: new Date(year, month - 1, 1).toLocaleDateString('fr-FR', { 
-            month: 'long', 
-            year: 'numeric' 
-          }),
-          daysWorked: 0,
-          weekendWork: 0,
-          absences: 0,
-          absenceType: '',
-          workType: '',
-          workTypeDays: 0
-        }
-      }
-      
-      acc[monthKey].daysWorked += schedule.days_worked || 0
-      acc[monthKey].weekendWork += schedule.weekend_worked || 0
-      acc[monthKey].absences += schedule.absence_days || 0
-      acc[monthKey].workTypeDays += schedule.work_type_days || 0
-      
-      if (schedule.absence_type && !acc[monthKey].absenceType.includes(schedule.absence_type)) {
-        acc[monthKey].absenceType = acc[monthKey].absenceType 
-          ? `${acc[monthKey].absenceType}, ${schedule.absence_type}`
-          : schedule.absence_type
-      }
-      
-      if (schedule.work_type?.name && !acc[monthKey].workType.includes(schedule.work_type.name)) {
-        acc[monthKey].workType = acc[monthKey].workType 
-          ? `${acc[monthKey].workType}, ${schedule.work_type.name}`
-          : schedule.work_type.name
-      }
-      
-      // Collecter les types d'absence avec leave_type si disponible
-      if (schedule.absence_type && schedule.absence_type !== 'none') {
-        if (schedule.leave_type?.name) {
-          if (!acc[monthKey].absenceType.includes(schedule.leave_type.name)) {
-            acc[monthKey].absenceType = acc[monthKey].absenceType 
-              ? `${acc[monthKey].absenceType}, ${schedule.leave_type.name}`
-              : schedule.leave_type.name
-          }
-        }
-      }
-      
-      return acc
-    } catch (error) {
-      console.error('❌ Erreur lors du groupement d\'un schedule (Manager):', error, schedule)
-      return acc
-    }
-    }, {} as Record<string, WorkLogEntry>)
-    
-    const result = Object.values(grouped).sort((a, b) => {
-      if (a.year !== b.year) return b.year - a.year
-      return b.month - a.month
-    })
-    
-    console.log('✅ Groupement terminé (Manager):', result.length, 'mois groupés')
-    console.log('📋 Résultat (Manager):', result)
-    
-    return result
-  }
-
-  // Refresh work schedules
-  const refreshWorkSchedules = async () => {
-    if (!consultant) return
-    
-    try {
-      const consultantId = consultant.id
-      // Invalider le cache avant de recharger pour s'assurer d'avoir les relations
-      invalidateCache(`/consultants/${consultantId}`)
-      invalidateCache('/consultants')
-      
-      // Forcer le rechargement sans cache
-      const { api } = await import('@/lib/api')
-      const response = await api.get(`/consultants/${consultantId}`)
-      
-      // Laravel peut retourner les données directement ou dans response.data
-      const consultantData = response.data?.data || response.data
-      // Laravel peut retourner workSchedules en camelCase ou work_schedules en snake_case
-      const consultantWorkSchedules = consultantData?.workSchedules || consultantData?.work_schedules || []
-      
-      console.log('✅ WorkSchedules rafraîchis (Manager):', {
-        nombre: consultantWorkSchedules.length,
-        workSchedules: consultantWorkSchedules
-      })
-      
-      setWorkSchedules(consultantWorkSchedules)
-    } catch (err: any) {
-      console.error('Erreur lors du rafraîchissement:', err)
-      console.error('Détails de l\'erreur:', {
-        message: err.message,
-        response: err.response?.data,
-        status: err.response?.status
-      })
-    }
-  }
-
-  const groupedWorkLogs = groupWorkSchedulesByMonth()
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -646,6 +670,9 @@ export default function ConsultantDetailsPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Jours de type de travail
                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -660,7 +687,7 @@ export default function ConsultantDetailsPage() {
                   })()}
                   {groupedWorkLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
                         <div className="space-y-2">
                           <p>Aucune donnée de travail disponible</p>
                           <p className="text-xs text-gray-400">
@@ -700,6 +727,45 @@ export default function ConsultantDetailsPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                           {log.workTypeDays > 0 ? `${log.workTypeDays} jour(s)` : '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          {(() => {
+                            const signatureKey = `${log.year}-${log.month}`
+                            const signatures = signedCRAs[signatureKey]
+                            const isManagerSigned = signatures?.manager !== null && signatures?.manager !== undefined
+                            const allSigned = signatures?.consultant && signatures?.client && signatures?.manager
+
+                            if (allSigned) {
+                              return (
+                                <div className="flex items-center space-x-2 text-green-600">
+                                  <CheckCircle className="h-5 w-5" />
+                                  <span className="text-sm font-medium">Complètement signé</span>
+                                </div>
+                              )
+                            }
+
+                            if (isManagerSigned) {
+                              return (
+                                <div className="flex items-center space-x-2 text-blue-600">
+                                  <CheckCircle className="h-5 w-5" />
+                                  <span className="text-sm font-medium">Signé (Manager)</span>
+                                </div>
+                              )
+                            }
+
+                            return (
+                              <motion.button
+                                onClick={() => router.push(`/sign-cra?month=${log.month}&year=${log.year}&consultantId=${consultant.id}`)}
+                                className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                title="Signer le CRA"
+                              >
+                                <PenTool className="h-4 w-4" />
+                                <span>Signer</span>
+                              </motion.button>
+                            )
+                          })()}
                         </td>
                       </motion.tr>
                     ))

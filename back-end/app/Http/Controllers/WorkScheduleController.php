@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\WorkSchedule;
-use App\Models\CraSignature;
 use Illuminate\Http\Request;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Mail;
@@ -375,81 +374,5 @@ class WorkScheduleController extends Controller
                 'message' => 'Erreur lors de l\'envoi de l\'email: ' . $e->getMessage()
             ], 500);
         }
-    }
-
-    /**
-     * Signer un CRA mensuel
-     */
-    public function signCRA(Request $request)
-    {
-        $request->validate([
-            'month' => 'required|integer|min:1|max:12',
-            'year' => 'required|integer|min:2020|max:2030',
-            'signature_data' => 'required|string'
-        ]);
-
-        $consultant = $request->user();
-        $month = $request->month;
-        $year = $request->year;
-
-        // Vérifier si une signature existe déjà pour ce mois/année
-        $existingSignature = CraSignature::where('consultant_id', $consultant->id)
-            ->where('month', $month)
-            ->where('year', $year)
-            ->first();
-
-        if ($existingSignature) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Ce CRA a déjà été signé'
-            ], 400);
-        }
-
-        // Créer la signature
-        $signature = CraSignature::create([
-            'consultant_id' => $consultant->id,
-            'month' => $month,
-            'year' => $year,
-            'signature_data' => $request->signature_data,
-            'signed_at' => now()
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'CRA signé avec succès',
-            'data' => [
-                'signature' => $signature,
-                'signed_at' => $signature->signed_at
-            ]
-        ]);
-    }
-
-    /**
-     * Vérifier si un CRA est signé
-     */
-    public function checkCRASignature(Request $request)
-    {
-        $request->validate([
-            'month' => 'required|integer|min:1|max:12',
-            'year' => 'required|integer|min:2020|max:2030'
-        ]);
-
-        $consultant = $request->user();
-        $month = $request->month;
-        $year = $request->year;
-
-        $signature = CraSignature::where('consultant_id', $consultant->id)
-            ->where('month', $month)
-            ->where('year', $year)
-            ->first();
-
-        return response()->json([
-            'success' => true,
-            'is_signed' => $signature !== null,
-            'signature' => $signature ? [
-                'signed_at' => $signature->signed_at,
-                'created_at' => $signature->created_at
-            ] : null
-        ]);
     }
 }

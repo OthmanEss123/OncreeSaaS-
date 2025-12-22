@@ -42,7 +42,7 @@ export default function ComptableDetailsPage() {
         }
 
         const response = await ComptableAPI.get(comptableId)
-        setComptable(response.data || response)
+        setComptable(response)
       } catch (err: any) {
         console.error('Erreur lors du chargement du comptable:', err)
         setError(err.response?.data?.message || err.message || 'Erreur lors du chargement des données')
@@ -311,6 +311,15 @@ export default function ComptableDetailsPage() {
     </div>
   )
 }
+
+
+
+
+
+
+
+
+
 
 
 

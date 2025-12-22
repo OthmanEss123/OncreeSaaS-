@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getCurrentDateKey } from '@/lib/date-utils'
@@ -107,7 +107,15 @@ export default function UserDashboard() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [signedCRAs, setSignedCRAs] = useState<Record<string, { signed_at: string }>>({})
+  const [signedCRAs, setSignedCRAs] = useState<Record<string, {
+    consultant?: { signed_at: string };
+    client?: { signed_at: string };
+    manager?: { signed_at: string };
+  }>>({})
+  
+  // Référence pour éviter les appels API multiples
+  const checkedPeriodsRef = useRef<string>('')
+  const isCheckingRef = useRef(false)
   
   const [workEntry, setWorkEntry] = useState<WorkEntryForm>({
     date: getCurrentDateKey(),
@@ -610,7 +618,7 @@ export default function UserDashboard() {
 
   // Rediriger vers la page de signature du CRA
   const handleSignCRA = (log: WorkLog) => {
-    router.push(`/consultant/sign-cra?month=${log.month}&year=${log.year}`)
+    router.push(`/sign-cra?month=${log.month}&year=${log.year}`)
   };
 
   // Load data from backend on component mount (seulement si workSchedules est vide)
@@ -631,55 +639,123 @@ export default function UserDashboard() {
     }
   }, [])
 
-  // Vérifier les signatures des CRA au chargement
+  // Vérifier les signatures des CRA au chargement (optimisé : une seule requête)
   useEffect(() => {
     const checkSignatures = async () => {
-      if (workLogs.length > 0) {
-        const signatures: Record<string, { signed_at: string }> = {};
-        for (const log of workLogs) {
-          try {
-            const result = await WorkScheduleAPI.checkCRASignature(log.month, log.year);
-            // result contient directement { success, is_signed, signature }
-            if (result.is_signed && result.signature) {
-              const key = `${log.year}-${log.month}`;
-              signatures[key] = { signed_at: result.signature.signed_at };
-            }
-          } catch (error) {
-            console.error(`Erreur lors de la vérification de la signature pour ${log.month}/${log.year}:`, error);
+      // Ignorer si workLogs est vide ou si on est déjà en train de vérifier
+      if (workLogs.length === 0 || isCheckingRef.current) {
+        return;
+      }
+      
+      // Créer une clé unique pour les périodes actuelles
+      const periodsKey = workLogs
+        .map(log => `${log.year}-${log.month}`)
+        .sort()
+        .join(',');
+      
+      // Ignorer si on a déjà vérifié ces mêmes périodes
+      if (checkedPeriodsRef.current === periodsKey) {
+        return;
+      }
+      
+      try {
+        isCheckingRef.current = true;
+        
+        // Préparer la liste des périodes à vérifier
+        const periods = workLogs.map(log => ({ month: log.month, year: log.year }));
+        
+        // Une seule requête pour toutes les signatures
+        const result = await WorkScheduleAPI.checkCRASignatures(periods);
+        
+        // Transformer le résultat en format attendu (conserver toutes les signatures par type)
+        const signatures: Record<string, {
+          consultant?: { signed_at: string };
+          client?: { signed_at: string };
+          manager?: { signed_at: string };
+        }> = {};
+        
+        Object.entries(result.signatures).forEach(([key, value]) => {
+          signatures[key] = {};
+          if (value.consultant) {
+            signatures[key].consultant = { signed_at: value.consultant.signed_at };
           }
-        }
+          if (value.client) {
+            signatures[key].client = { signed_at: value.client.signed_at };
+          }
+          if (value.manager) {
+            signatures[key].manager = { signed_at: value.manager.signed_at };
+          }
+        });
+        
         setSignedCRAs(signatures);
+        checkedPeriodsRef.current = periodsKey; // Mémoriser qu'on a vérifié ces périodes
+      } catch (error) {
+        console.error('Erreur lors de la vérification des signatures:', error);
+      } finally {
+        isCheckingRef.current = false;
       }
     };
 
     checkSignatures();
   }, [workLogs])
 
-  // Vérifier si on revient de la page de signature avec succès
+  // Vérifier si on revient de la page de signature avec succès (optimisé : une seule requête)
   useEffect(() => {
     const signed = searchParams.get('signed')
-    if (signed === 'true') {
-      // Rafraîchir les signatures
+    if (signed === 'true' && workLogs.length > 0) {
+      // Rafraîchir les signatures (forcer le rechargement même si déjà vérifiées)
       const refreshSignatures = async () => {
-        if (workLogs.length > 0) {
-          const signatures: Record<string, { signed_at: string }> = {};
-          for (const log of workLogs) {
-            try {
-              const result = await WorkScheduleAPI.checkCRASignature(log.month, log.year);
-              if (result.is_signed && result.signature) {
-                const key = `${log.year}-${log.month}`;
-                signatures[key] = { signed_at: result.signature.signed_at };
-              }
-            } catch (error) {
-              console.error(`Erreur lors de la vérification de la signature pour ${log.month}/${log.year}:`, error);
-            }
-          }
-          setSignedCRAs(signatures);
+        if (isCheckingRef.current) {
+          return; // Déjà en train de vérifier
         }
-        // Afficher un message de succès
-        alert('✅ CRA signé avec succès !')
-        // Nettoyer l'URL
-        router.replace('/consultant/dashboard')
+        
+        try {
+          isCheckingRef.current = true;
+          
+          // Préparer la liste des périodes à vérifier
+          const periods = workLogs.map(log => ({ month: log.month, year: log.year }));
+          
+          // Une seule requête pour toutes les signatures
+          const result = await WorkScheduleAPI.checkCRASignatures(periods);
+          
+          // Transformer le résultat en format attendu (conserver toutes les signatures par type)
+          const signatures: Record<string, {
+            consultant?: { signed_at: string };
+            client?: { signed_at: string };
+            manager?: { signed_at: string };
+          }> = {};
+          
+          Object.entries(result.signatures).forEach(([key, value]) => {
+            signatures[key] = {};
+            if (value.consultant) {
+              signatures[key].consultant = { signed_at: value.consultant.signed_at };
+            }
+            if (value.client) {
+              signatures[key].client = { signed_at: value.client.signed_at };
+            }
+            if (value.manager) {
+              signatures[key].manager = { signed_at: value.manager.signed_at };
+            }
+          });
+          
+          setSignedCRAs(signatures);
+          
+          // Mettre à jour la référence pour éviter les vérifications redondantes
+          const periodsKey = workLogs
+            .map(log => `${log.year}-${log.month}`)
+            .sort()
+            .join(',');
+          checkedPeriodsRef.current = periodsKey;
+          
+          // Afficher un message de succès
+          alert('✅ CRA signé avec succès !')
+          // Nettoyer l'URL
+          router.replace('/consultant/dashboard')
+        } catch (error) {
+          console.error('Erreur lors de la vérification des signatures:', error);
+        } finally {
+          isCheckingRef.current = false;
+        }
       }
       refreshSignatures()
     }
@@ -1071,7 +1147,10 @@ export default function UserDashboard() {
                 <tbody className="bg-card divide-y divide-border">
                   {groupedWorkLogs.map((log) => {
                     const signatureKey = `${log.year}-${log.month}`;
-                    const isSigned = signedCRAs[signatureKey] !== undefined;
+                    const signatures = signedCRAs[signatureKey];
+                    const consultantSigned = signatures?.consultant !== undefined;
+                    const clientSigned = signatures?.client !== undefined;
+                    const managerSigned = signatures?.manager !== undefined;
                     
                     return (
                       <motion.tr 
@@ -1117,12 +1196,12 @@ export default function UserDashboard() {
                             </motion.button>
                             
                             {/* Bouton Signer le CRA */}
-                            {isSigned ? (
+                            {consultantSigned ? (
                               <motion.div
                                 className="bg-purple-600 text-white px-3 py-2 rounded-lg flex items-center space-x-1 text-sm font-medium cursor-default"
-                                title={`CRA signé le ${signedCRAs[signatureKey].signed_at}`}>
+                                title={`CRA signé par consultant le ${new Date(signatures.consultant!.signed_at).toLocaleDateString('fr-FR')}`}>
                                 <CheckCircle className="h-4 w-4" />
-                                <span>Signé</span>
+                                <span>Signé (consultant)</span>
                               </motion.div>
                             ) : (
                               <motion.button

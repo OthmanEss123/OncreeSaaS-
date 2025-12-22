@@ -79,6 +79,8 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     // Routes pour la signature de CRA
     Route::post('/sign-cra', [WorkScheduleController::class, 'signCRA']);
     Route::get('/check-cra-signature', [WorkScheduleController::class, 'checkCRASignature']);
+    Route::get('/check-cra-signature-status', [WorkScheduleController::class, 'checkCRASignatureStatus']); // Vérifier le statut détaillé des signatures
+    Route::post('/check-cra-signatures', [WorkScheduleController::class, 'checkCRASignatures']); // Optimisé pour plusieurs signatures
     
     // Routes pour les contestations d'horaires
     Route::apiResource('schedule-contests', ScheduleContestController::class);

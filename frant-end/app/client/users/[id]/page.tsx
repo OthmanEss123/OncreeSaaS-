@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
 import { 
@@ -22,7 +22,8 @@ import {
   Loader2,
   RefreshCw,
   XCircle,
-  X
+  X,
+  PenTool
 } from 'lucide-react'
 import { ConsultantAPI, WorkScheduleAPI, ScheduleContestAPI, invalidateCache } from '@/lib/api'
 import type { Consultant, WorkSchedule, Project as ProjectType } from '@/lib/type'
@@ -57,6 +58,24 @@ interface Project {
   cost: number
   startDate: string
   endDate?: string
+}
+
+interface WorkLog {
+  id: string
+  date?: string
+  month: number
+  year: number
+  daysWorked: number
+  workDescription: string
+  additionalCharges: number
+  totalCost: number
+  weekendWork: number
+  absences: number
+  workTypeDays?: number
+  absenceType?: string
+  workType: string
+  monthName?: string
+  details?: WorkLog[]
 }
 
 interface WorkLogEntry {
@@ -226,6 +245,24 @@ export default function UserDetailsPage() {
   const [showContestModal, setShowContestModal] = useState(false)
   const [selectedScheduleForContest, setSelectedScheduleForContest] = useState<number | null>(null)
   const [contestJustification, setContestJustification] = useState('')
+  const [signedCRAs, setSignedCRAs] = useState<Record<string, {
+    consultant?: { signed_at: string };
+    client?: { signed_at: string };
+    manager?: { signed_at: string };
+  }>>({})
+  const [currentUserType, setCurrentUserType] = useState<string | null>(null)
+  
+  // Référence pour éviter les appels API multiples
+  const checkedPeriodsRef = useRef<string>('')
+  const isCheckingRef = useRef(false)
+
+  // Récupérer le type d'utilisateur au chargement
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const userType = localStorage.getItem('userType')
+      setCurrentUserType(userType)
+    }
+  }, [])
 
   // Fetch consultant data from API
   useEffect(() => {
@@ -474,6 +511,8 @@ export default function UserDetailsPage() {
       })
       
       setWorkSchedules(consultantWorkSchedules)
+      // Réinitialiser la référence pour forcer la vérification des signatures après rafraîchissement
+      checkedPeriodsRef.current = ''
     } catch (err: any) {
       console.error('Erreur lors du rafraîchissement:', err)
       console.error('Détails de l\'erreur:', {
@@ -580,6 +619,89 @@ export default function UserDetailsPage() {
       setContestingScheduleId(null)
     }
   }
+
+  // Rediriger vers la page de signature du CRA
+  const handleSignCRA = (log: WorkLog) => {
+    const consultantId = user?.id || params.id
+    router.push(`/sign-cra?month=${log.month}&year=${log.year}&consultantId=${consultantId}`)
+  }
+  // Vérifier les signatures des CRA au chargement (optimisé : une seule requête)
+  useEffect(() => {
+    const checkSignatures = async () => {
+      // Ignorer si workSchedules est vide ou si on est déjà en train de vérifier
+      if (workSchedules.length === 0 || isCheckingRef.current) {
+        return;
+      }
+      
+      // Extraire les périodes uniques (month, year) des schedules
+      const periodsMap = new Map<string, { month: number; year: number }>();
+      workSchedules.forEach(schedule => {
+        const month = schedule.month || (schedule.date ? new Date(schedule.date).getMonth() + 1 : null)
+        const year = schedule.year || (schedule.date ? new Date(schedule.date).getFullYear() : null)
+        
+        if (month && year) {
+          const key = `${year}-${month}`;
+          periodsMap.set(key, { month, year });
+        }
+      });
+      
+      const periods = Array.from(periodsMap.values());
+      
+      if (periods.length === 0) {
+        return;
+      }
+      
+      // Créer une clé unique pour les périodes actuelles
+      const periodsKey = periods
+        .map(p => `${p.year}-${p.month}`)
+        .sort()
+        .join(',');
+      
+      // Ignorer si on a déjà vérifié ces mêmes périodes
+      if (checkedPeriodsRef.current === periodsKey) {
+        return;
+      }
+      
+      try {
+        isCheckingRef.current = true;
+        
+        // Récupérer le consultant ID
+        const consultantId = user?.id ? parseInt(user.id) : undefined;
+        
+        // Une seule requête pour toutes les signatures
+        const result = await WorkScheduleAPI.checkCRASignatures(periods, consultantId);
+        
+        // Transformer le résultat en format attendu (conserver toutes les signatures par type)
+        const signatures: Record<string, {
+          consultant?: { signed_at: string };
+          client?: { signed_at: string };
+          manager?: { signed_at: string };
+        }> = {};
+        
+        Object.entries(result.signatures).forEach(([key, value]) => {
+          signatures[key] = {};
+          if (value.consultant) {
+            signatures[key].consultant = { signed_at: value.consultant.signed_at };
+          }
+          if (value.client) {
+            signatures[key].client = { signed_at: value.client.signed_at };
+          }
+          if (value.manager) {
+            signatures[key].manager = { signed_at: value.manager.signed_at };
+          }
+        });
+        
+        setSignedCRAs(signatures);
+        checkedPeriodsRef.current = periodsKey; // Mémoriser qu'on a vérifié ces périodes
+      } catch (error) {
+        console.error('Erreur lors de la vérification des signatures:', error);
+      } finally {
+        isCheckingRef.current = false;
+      }
+    };
+
+    checkSignatures();
+  }, [workSchedules, user])
 
   const groupedWorkLogs = groupWorkSchedulesByMonth()
   
@@ -1098,8 +1220,65 @@ export default function UserDetailsPage() {
                             ) : (
                               <CheckCircle className="h-3 w-3" />
                             )}
-                            <span className="text-xs">Valider</span>
                           </motion.button>
+                          
+                          {(() => {
+                            const month = schedule.month || (schedule.date ? new Date(schedule.date).getMonth() + 1 : null)
+                            const year = schedule.year || (schedule.date ? new Date(schedule.date).getFullYear() : null)
+                            const signatureKey = month && year ? `${year}-${month}` : null
+                            const signatures = signatureKey ? signedCRAs[signatureKey] : null
+                            
+                            // Vérifier si l'utilisateur actuel a déjà signé
+                            const userHasSigned = currentUserType === 'consultant' && signatures?.consultant
+                              || currentUserType === 'client' && signatures?.client
+                              || currentUserType === 'manager' && signatures?.manager
+                            
+                            // Créer un objet log temporaire pour handleSignCRA (comme dans le dashboard consultant)
+                            const log: WorkLog = {
+                              id: schedule.id.toString(),
+                              month: month || 1,
+                              year: year || new Date().getFullYear(),
+                              daysWorked: schedule.days_worked || 0,
+                              workDescription: '',
+                              additionalCharges: 0,
+                              totalCost: 0,
+                              weekendWork: schedule.weekend_worked || 0,
+                              absences: schedule.absence_days || 0,
+                              workType: schedule.work_type?.name || '',
+                              workTypeDays: schedule.work_type_days || 0,
+                              date: schedule.date || undefined
+                            }
+                            
+                            // Si l'utilisateur a déjà signé, afficher un badge
+                            if (userHasSigned) {
+                              const signedBy = currentUserType === 'consultant' ? signatures?.consultant
+                                : currentUserType === 'client' ? signatures?.client
+                                : signatures?.manager
+                              
+                              return (
+                                <motion.div
+                                  className="bg-purple-600 text-white px-3 py-2 rounded-lg flex items-center space-x-1 text-sm font-medium cursor-default"
+                                  title={`Signé par ${currentUserType} le ${new Date(signedBy!.signed_at).toLocaleDateString('fr-FR')}`}>
+                                  <CheckCircle className="h-4 w-4" />
+                                  <span>Signé ({currentUserType})</span>
+                                </motion.div>
+                              )
+                            }
+                            
+                            // Sinon, afficher le bouton pour signer
+                            return (
+                              <motion.button
+                                onClick={() => handleSignCRA(log)}
+                                disabled={validatingScheduleId === schedule.id || contestingScheduleId === schedule.id}
+                                className="bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-1 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                whileHover={{ scale: validatingScheduleId !== schedule.id && contestingScheduleId !== schedule.id ? 1.05 : 1 }}
+                                whileTap={{ scale: validatingScheduleId !== schedule.id && contestingScheduleId !== schedule.id ? 0.95 : 1 }}
+                                title="Signer le CRA de ce mois">
+                                <PenTool className="h-4 w-4" />
+                                <span>Signer</span>
+                              </motion.button>
+                            )
+                          })()}
                           
                           <motion.button
                             onClick={() => handleOpenContestModal(schedule.id)}
@@ -1110,7 +1289,6 @@ export default function UserDetailsPage() {
                             title="Contester cet horaire"
                           >
                             <XCircle className="h-3 w-3" />
-                            <span className="text-xs">Contester</span>
                           </motion.button>
                         </div>
                       </td>
