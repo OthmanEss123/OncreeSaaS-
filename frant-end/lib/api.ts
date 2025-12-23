@@ -445,21 +445,37 @@ export const WorkScheduleAPI = {
     return result
   },
   // Signer un CRA mensuel
-  signCRA: async (month: number, year: number, signatureData?: string) => {
+  signCRA: async (month: number, year: number, signatureData?: string, consultantId?: number) => {
     const result = await api.post<ApiResponse<{ signature: any; signed_at: string }>>('/sign-cra', { 
       month, 
       year,
-      signature_data: signatureData 
+      signature_data: signatureData,
+      consultant_id: consultantId
     })
     invalidateCache('/work-logs-grouped')
     return result
   },
   // Vérifier si un CRA est signé
-  checkCRASignature: async (month: number, year: number) => {
+  checkCRASignature: async (month: number, year: number, consultantId?: number) => {
     const response = await api.get<{ success: boolean; is_signed: boolean; signature: { signed_at: string; created_at: string } | null }>('/check-cra-signature', {
-      params: { month, year }
+      params: { month, year, consultant_id: consultantId }
     })
     // Le backend retourne directement { success, is_signed, signature }
+    return response.data
+  },
+  // Vérifier le statut détaillé des signatures
+  checkCRASignatureStatus: async (month: number, year: number, consultantId?: number) => {
+    const response = await api.get<{ success: boolean; status: any }>('/check-cra-signature-status', {
+      params: { month, year, consultant_id: consultantId }
+    })
+    return response.data
+  },
+  // Vérifier les signatures pour plusieurs périodes (optimisé)
+  checkCRASignatures: async (periods: Array<{ month: number; year: number }>, consultantId?: number) => {
+    const response = await api.post<{ success: boolean; signatures: Record<string, any> }>('/check-cra-signatures', {
+      periods,
+      consultant_id: consultantId
+    })
     return response.data
   }
 }

@@ -3,9 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\WorkSchedule;
+use App\Models\CraSignature;
+use App\Models\Consultant;
+use App\Models\Client;
+use App\Models\Manager;
 use Illuminate\Http\Request;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 
 class WorkScheduleController extends Controller
 {
@@ -372,6 +377,406 @@ class WorkScheduleController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de l\'envoi de l\'email: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Signer un CRA mensuel
+     * Gère les signatures pour consultant, client et manager
+     */
+    public function signCRA(Request $request)
+    {
+        try {
+            $request->validate([
+                'month' => 'required|integer|min:1|max:12',
+                'year' => 'required|integer|min:2020|max:2030',
+                'signature_data' => 'required|string',
+                'consultant_id' => 'nullable|exists:consultants,id'
+            ]);
+
+            $user = $request->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Utilisateur non authentifié'
+                ], 401);
+            }
+
+            $month = $request->month;
+            $year = $request->year;
+            $signatureData = $request->signature_data;
+            
+            // Déterminer le consultant_id
+            $consultantId = $request->consultant_id;
+            
+            // Si consultant_id n'est pas fourni, utiliser l'ID de l'utilisateur si c'est un consultant
+            if (!$consultantId) {
+                if ($user instanceof Consultant) {
+                    $consultantId = $user->id;
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'consultant_id requis pour signer le CRA'
+                    ], 422);
+                }
+            }
+
+            // Déterminer le type de signataire selon le type d'utilisateur
+            $signatureField = null;
+            $signedAtField = null;
+            $signerIdField = null;
+            
+            if ($user instanceof Consultant) {
+                $signatureField = 'consultant_signature_data';
+                $signedAtField = 'consultant_signed_at';
+                $signerIdField = 'consultant_signer_id';
+            } elseif ($user instanceof Client) {
+                $signatureField = 'client_signature_data';
+                $signedAtField = 'client_signed_at';
+                $signerIdField = 'client_signer_id';
+            } elseif ($user instanceof Manager) {
+                $signatureField = 'manager_signature_data';
+                $signedAtField = 'manager_signed_at';
+                $signerIdField = 'manager_signer_id';
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Type d\'utilisateur non autorisé pour signer'
+                ], 403);
+            }
+
+            // Récupérer ou créer l'enregistrement de signature
+            $craSignature = CraSignature::firstOrCreate(
+                [
+                    'consultant_id' => $consultantId,
+                    'month' => $month,
+                    'year' => $year
+                ],
+                [
+                    'consultant_id' => $consultantId,
+                    'month' => $month,
+                    'year' => $year
+                ]
+            );
+
+            // Mettre à jour la signature correspondante
+            $updateData = [
+                $signatureField => $signatureData,
+                $signedAtField => now(),
+                $signerIdField => $user->id
+            ];
+
+            // Si c'est un client, mettre à jour aussi client_id
+            if ($user instanceof Client) {
+                $updateData['client_id'] = $user->id;
+            }
+            
+            // Si c'est un manager, mettre à jour aussi manager_id
+            if ($user instanceof Manager) {
+                $updateData['manager_id'] = $user->id;
+            }
+
+            $craSignature->update($updateData);
+
+            // Vérifier si toutes les signatures sont présentes pour envoyer le PDF
+            $allSigned = $craSignature->consultant_signature_data 
+                && $craSignature->client_signature_data 
+                && $craSignature->manager_signature_data;
+
+            if ($allSigned) {
+                // Générer et envoyer le PDF par email
+                try {
+                    $this->sendSignedCRAPDF($craSignature);
+                } catch (\Exception $e) {
+                    Log::error('Erreur lors de l\'envoi du PDF CRA: ' . $e->getMessage());
+                    // Ne pas faire échouer la signature si l'envoi échoue
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Signature enregistrée avec succès',
+                'data' => [
+                    'signature' => $craSignature,
+                    'all_signed' => $allSigned
+                ]
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur de validation',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Erreur lors de la signature du CRA: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la signature: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Envoyer le PDF du CRA signé par email
+     */
+    private function sendSignedCRAPDF($craSignature)
+    {
+        $consultant = $craSignature->consultant;
+        $project = $consultant->project;
+        
+        if (!$project || !$project->client) {
+            throw new \Exception('Projet ou client non trouvé');
+        }
+
+        // Récupérer les données du mois
+        $schedules = WorkSchedule::where('consultant_id', $consultant->id)
+            ->where('month', $craSignature->month)
+            ->where('year', $craSignature->year)
+            ->with(['workType', 'leaveType'])
+            ->orderBy('date', 'asc')
+            ->get();
+
+        $monthName = \Carbon\Carbon::create($craSignature->year, $craSignature->month, 1)
+            ->locale('fr')
+            ->isoFormat('MMMM YYYY');
+
+        // Préparer les données pour le PDF
+        $totalDaysWorked = $schedules->sum('days_worked');
+        $totalWeekendWork = $schedules->sum('weekend_worked');
+        $totalAbsences = $schedules->sum('absence_days');
+        $totalWorkTypeDays = $schedules->sum('work_type_days');
+
+        $data = [
+            'consultant' => $consultant,
+            'client' => $project->client,
+            'project' => $project,
+            'monthName' => $monthName,
+            'month' => $craSignature->month,
+            'year' => $craSignature->year,
+            'schedules' => $schedules,
+            'totalDaysWorked' => round($totalDaysWorked, 1),
+            'totalWeekendWork' => round($totalWeekendWork, 1),
+            'totalAbsences' => round($totalAbsences, 1),
+            'totalWorkTypeDays' => round($totalWorkTypeDays, 1),
+            'craSignature' => $craSignature
+        ];
+
+        // Générer le PDF
+        $pdf = Pdf::loadView('emails.signed-cra', $data);
+        
+        // Envoyer l'email
+        Mail::send('emails.signed-cra-email', $data, function ($message) use ($project, $consultant, $monthName, $pdf) {
+            $clientEmail = $project->client->contact_email;
+            $message->to($clientEmail)
+                ->subject("CRA Signé - {$consultant->name} - {$monthName}")
+                ->attachData($pdf->output(), "CRA_Signe_{$monthName}.pdf");
+        });
+    }
+
+    /**
+     * Vérifier si un CRA est signé pour un mois/année donné
+     */
+    public function checkCRASignature(Request $request)
+    {
+        try {
+            $request->validate([
+                'month' => 'required|integer|min:1|max:12',
+                'year' => 'required|integer|min:2020|max:2030',
+                'consultant_id' => 'nullable|exists:consultants,id'
+            ]);
+
+            $user = $request->user();
+            $month = $request->month;
+            $year = $request->year;
+            $consultantId = $request->consultant_id ?? ($user instanceof Consultant ? $user->id : null);
+
+            if (!$consultantId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'consultant_id requis'
+                ], 422);
+            }
+
+            $craSignature = CraSignature::where('consultant_id', $consultantId)
+                ->where('month', $month)
+                ->where('year', $year)
+                ->first();
+
+            $isSigned = $craSignature && (
+                $craSignature->consultant_signature_data ||
+                $craSignature->client_signature_data ||
+                $craSignature->manager_signature_data
+            );
+
+            return response()->json([
+                'success' => true,
+                'is_signed' => $isSigned,
+                'signature' => $craSignature ? [
+                    'consultant_signed_at' => $craSignature->consultant_signed_at?->toISOString(),
+                    'client_signed_at' => $craSignature->client_signed_at?->toISOString(),
+                    'manager_signed_at' => $craSignature->manager_signed_at?->toISOString(),
+                    'created_at' => $craSignature->created_at->toISOString()
+                ] : null
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erreur lors de la vérification de signature CRA: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la vérification: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Vérifier le statut détaillé des signatures pour un CRA
+     */
+    public function checkCRASignatureStatus(Request $request)
+    {
+        try {
+            $request->validate([
+                'month' => 'required|integer|min:1|max:12',
+                'year' => 'required|integer|min:2020|max:2030',
+                'consultant_id' => 'nullable|exists:consultants,id'
+            ]);
+
+            $user = $request->user();
+            $month = $request->month;
+            $year = $request->year;
+            $consultantId = $request->consultant_id ?? ($user instanceof Consultant ? $user->id : null);
+
+            if (!$consultantId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'consultant_id requis'
+                ], 422);
+            }
+
+            $craSignature = CraSignature::where('consultant_id', $consultantId)
+                ->where('month', $month)
+                ->where('year', $year)
+                ->first();
+
+            if (!$craSignature) {
+                return response()->json([
+                    'success' => true,
+                    'status' => [
+                        'consultant_signed' => false,
+                        'client_signed' => false,
+                        'manager_signed' => false,
+                        'all_signed' => false
+                    ]
+                ]);
+            }
+
+            $consultantSigned = !empty($craSignature->consultant_signature_data);
+            $clientSigned = !empty($craSignature->client_signature_data);
+            $managerSigned = !empty($craSignature->manager_signature_data);
+
+            return response()->json([
+                'success' => true,
+                'status' => [
+                    'consultant_signed' => $consultantSigned,
+                    'client_signed' => $clientSigned,
+                    'manager_signed' => $managerSigned,
+                    'all_signed' => $consultantSigned && $clientSigned && $managerSigned,
+                    'consultant_signed_at' => $craSignature->consultant_signed_at?->toISOString(),
+                    'client_signed_at' => $craSignature->client_signed_at?->toISOString(),
+                    'manager_signed_at' => $craSignature->manager_signed_at?->toISOString()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erreur lors de la vérification du statut CRA: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la vérification: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Vérifier les signatures pour plusieurs périodes (optimisé)
+     */
+    public function checkCRASignatures(Request $request)
+    {
+        try {
+            $request->validate([
+                'periods' => 'required|array',
+                'periods.*.month' => 'required|integer|min:1|max:12',
+                'periods.*.year' => 'required|integer|min:2020|max:2030',
+                'consultant_id' => 'nullable|exists:consultants,id'
+            ]);
+
+            $user = $request->user();
+            $periods = $request->periods;
+            $consultantId = $request->consultant_id ?? ($user instanceof Consultant ? $user->id : null);
+
+            if (!$consultantId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'consultant_id requis'
+                ], 422);
+            }
+
+            // Construire les conditions pour la requête
+            $query = CraSignature::where('consultant_id', $consultantId);
+            
+            $query->where(function($q) use ($periods) {
+                foreach ($periods as $period) {
+                    $q->orWhere(function($subQ) use ($period) {
+                        $subQ->where('month', $period['month'])
+                             ->where('year', $period['year']);
+                    });
+                }
+            });
+
+            $signatures = $query->get();
+
+            // Construire le résultat par période
+            $result = [];
+            foreach ($periods as $period) {
+                $key = "{$period['year']}-{$period['month']}";
+                $signature = $signatures->first(function($sig) use ($period) {
+                    return $sig->month == $period['month'] && $sig->year == $period['year'];
+                });
+
+                if ($signature) {
+                    $result[$key] = [
+                        'consultant' => $signature->consultant_signature_data ? [
+                            'signed_at' => $signature->consultant_signed_at?->toISOString()
+                        ] : null,
+                        'client' => $signature->client_signature_data ? [
+                            'signed_at' => $signature->client_signed_at?->toISOString()
+                        ] : null,
+                        'manager' => $signature->manager_signature_data ? [
+                            'signed_at' => $signature->manager_signed_at?->toISOString()
+                        ] : null
+                    ];
+                } else {
+                    $result[$key] = [
+                        'consultant' => null,
+                        'client' => null,
+                        'manager' => null
+                    ];
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'signatures' => $result
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erreur lors de la vérification des signatures CRA: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la vérification: ' . $e->getMessage()
             ], 500);
         }
     }
