@@ -1003,7 +1003,7 @@ export default function SignCRAPage() {
 
       // Envoyer la signature (le backend déterminera automatiquement le signer_type)
       // Le backend vérifiera si toutes les signatures sont présentes et enverra le PDF par email si c'est le cas
-      const result = await WorkScheduleAPI.signCRA(month, year, signatureToSend)
+      const result = await WorkScheduleAPI.signCRA(month, year, signatureToSend, targetConsultantId)
       const response = result.data as any
 
       if (!response.success) {
