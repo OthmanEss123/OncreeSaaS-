@@ -479,6 +479,9 @@ class WorkScheduleController extends Controller
             }
 
             $craSignature->update($updateData);
+            
+            // Recharger la signature depuis la base de données pour avoir les dernières données
+            $craSignature->refresh();
 
             // Vérifier si toutes les signatures sont présentes pour envoyer le PDF
             $allSigned = $craSignature->consultant_signature_data 
@@ -488,11 +491,31 @@ class WorkScheduleController extends Controller
             if ($allSigned) {
                 // Générer et envoyer le PDF par email
                 try {
+                    Log::info('Toutes les signatures sont présentes, envoi de l\'email CRA', [
+                        'consultant_id' => $consultantId,
+                        'month' => $month,
+                        'year' => $year
+                    ]);
                     $this->sendSignedCRAPDF($craSignature);
                 } catch (\Exception $e) {
-                    Log::error('Erreur lors de l\'envoi du PDF CRA: ' . $e->getMessage());
+                    Log::error('Erreur lors de l\'envoi du PDF CRA', [
+                        'consultant_id' => $consultantId,
+                        'month' => $month,
+                        'year' => $year,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
                     // Ne pas faire échouer la signature si l'envoi échoue
                 }
+            } else {
+                Log::info('Toutes les signatures ne sont pas encore présentes', [
+                    'consultant_id' => $consultantId,
+                    'month' => $month,
+                    'year' => $year,
+                    'has_consultant' => !empty($craSignature->consultant_signature_data),
+                    'has_client' => !empty($craSignature->client_signature_data),
+                    'has_manager' => !empty($craSignature->manager_signature_data)
+                ]);
             }
 
             return response()->json([
@@ -526,11 +549,58 @@ class WorkScheduleController extends Controller
      */
     private function sendSignedCRAPDF($craSignature)
     {
+        // Recharger la signature avec les relations nécessaires
+        $craSignature->load(['consultant.project.client', 'consultant.client', 'client']);
+        
         $consultant = $craSignature->consultant;
+        
+        if (!$consultant) {
+            throw new \Exception('Consultant non trouvé (consultant_id: ' . $craSignature->consultant_id . ')');
+        }
+        
+        // Essayer de récupérer le client depuis plusieurs sources
+        $client = null;
         $project = $consultant->project;
         
-        if (!$project || !$project->client) {
-            throw new \Exception('Projet ou client non trouvé');
+        // 1. D'abord depuis le client_id dans la signature CRA
+        if ($craSignature->client_id && $craSignature->client) {
+            $client = $craSignature->client;
+        }
+        // 2. Sinon depuis le projet
+        elseif ($project && $project->client) {
+            $client = $project->client;
+        }
+        // 3. Sinon depuis le consultant directement
+        elseif ($consultant->client_id && $consultant->client) {
+            $client = $consultant->client;
+        }
+        // 4. Dernier recours : charger le client depuis l'ID
+        elseif ($craSignature->client_id) {
+            $client = Client::find($craSignature->client_id);
+        }
+        elseif ($project && $project->client_id) {
+            $client = Client::find($project->client_id);
+        }
+        elseif ($consultant->client_id) {
+            $client = Client::find($consultant->client_id);
+        }
+        
+        if (!$client) {
+            throw new \Exception('Client non trouvé pour le CRA. consultant_id: ' . $consultant->id . ', project_id: ' . ($project ? $project->id : 'null') . ', cra_client_id: ' . ($craSignature->client_id ?? 'null'));
+        }
+        
+        // Créer un objet projet virtuel si nécessaire
+        if (!$project) {
+            $project = (object)[
+                'id' => null,
+                'name' => 'Projet non défini',
+                'client' => $client
+            ];
+        } else {
+            // S'assurer que le projet a le client
+            if (!$project->client) {
+                $project->client = $client;
+            }
         }
 
         // Récupérer les données du mois
@@ -551,6 +621,62 @@ class WorkScheduleController extends Controller
         $totalAbsences = $schedules->sum('absence_days');
         $totalWorkTypeDays = $schedules->sum('work_type_days');
 
+        // Collecter les types d'absence et de travail
+        $absenceTypes = [];
+        $workTypes = [];
+        
+        foreach ($schedules as $schedule) {
+            if ($schedule->absence_type && $schedule->absence_type !== 'none') {
+                if ($schedule->leaveType && $schedule->leaveType->name) {
+                    if (!in_array($schedule->leaveType->name, $absenceTypes)) {
+                        $absenceTypes[] = $schedule->leaveType->name;
+                    }
+                } elseif (!in_array($schedule->absence_type, $absenceTypes)) {
+                    $absenceTypes[] = $schedule->absence_type;
+                }
+            }
+            
+            if ($schedule->workType && $schedule->workType->name) {
+                if (!in_array($schedule->workType->name, $workTypes)) {
+                    $workTypes[] = $schedule->workType->name;
+                }
+            }
+        }
+
+        // Préparer l'objet workLog pour les templates
+        $workLog = (object) [
+            'daysWorked' => round($totalDaysWorked, 1),
+            'weekendWork' => round($totalWeekendWork, 1),
+            'absences' => round($totalAbsences, 1),
+            'workTypeDays' => round($totalWorkTypeDays, 1),
+            'absenceType' => implode(', ', $absenceTypes),
+            'workType' => implode(', ', $workTypes)
+        ];
+
+        // Préparer la structure des signatures pour les templates
+        $signatures = [];
+        
+        if ($craSignature->consultant_signature_data && $craSignature->consultant_signed_at) {
+            $signatures['consultant'] = [
+                'signature_data' => $craSignature->consultant_signature_data,
+                'signed_at' => $craSignature->consultant_signed_at
+            ];
+        }
+        
+        if ($craSignature->client_signature_data && $craSignature->client_signed_at) {
+            $signatures['client'] = [
+                'signature_data' => $craSignature->client_signature_data,
+                'signed_at' => $craSignature->client_signed_at
+            ];
+        }
+        
+        if ($craSignature->manager_signature_data && $craSignature->manager_signed_at) {
+            $signatures['manager'] = [
+                'signature_data' => $craSignature->manager_signature_data,
+                'signed_at' => $craSignature->manager_signed_at
+            ];
+        }
+
         $data = [
             'consultant' => $consultant,
             'client' => $project->client,
@@ -563,6 +689,8 @@ class WorkScheduleController extends Controller
             'totalWeekendWork' => round($totalWeekendWork, 1),
             'totalAbsences' => round($totalAbsences, 1),
             'totalWorkTypeDays' => round($totalWorkTypeDays, 1),
+            'workLog' => $workLog,
+            'signatures' => $signatures,
             'craSignature' => $craSignature
         ];
 
@@ -570,12 +698,120 @@ class WorkScheduleController extends Controller
         $pdf = Pdf::loadView('emails.signed-cra', $data);
         
         // Envoyer l'email
-        Mail::send('emails.signed-cra-email', $data, function ($message) use ($project, $consultant, $monthName, $pdf) {
+        try {
             $clientEmail = $project->client->contact_email;
-            $message->to($clientEmail)
-                ->subject("CRA Signé - {$consultant->name} - {$monthName}")
-                ->attachData($pdf->output(), "CRA_Signe_{$monthName}.pdf");
-        });
+            
+            Log::info("Tentative d'envoi d'email CRA signé", [
+                'consultant_id' => $consultant->id,
+                'month' => $craSignature->month,
+                'year' => $craSignature->year,
+                'client_email' => $clientEmail
+            ]);
+            
+            Mail::send('emails.signed-cra-email', $data, function ($message) use ($project, $consultant, $monthName, $pdf, $clientEmail) {
+                $message->to($clientEmail)
+                    ->subject("CRA Signé - {$consultant->name} - {$monthName}")
+                    ->attachData($pdf->output(), "CRA_Signe_{$monthName}.pdf");
+            });
+            
+            Log::info("Email CRA signé envoyé avec succès", [
+                'consultant_id' => $consultant->id,
+                'month' => $craSignature->month,
+                'year' => $craSignature->year,
+                'client_email' => $clientEmail
+            ]);
+        } catch (\Exception $e) {
+            Log::error("Erreur lors de l'envoi de l'email CRA signé", [
+                'consultant_id' => $consultant->id,
+                'month' => $craSignature->month,
+                'year' => $craSignature->year,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e; // Re-lancer l'exception pour que le catch parent puisse la gérer
+        }
+    }
+
+    /**
+     * Réenvoyer l'email du CRA signé
+     */
+    public function resendSignedCRAEmail(Request $request)
+    {
+        try {
+            $request->validate([
+                'month' => 'required|integer|min:1|max:12',
+                'year' => 'required|integer|min:2020|max:2030',
+                'consultant_id' => 'required|exists:consultants,id'
+            ]);
+
+            $month = $request->month;
+            $year = $request->year;
+            $consultantId = $request->consultant_id;
+
+            $craSignature = CraSignature::where('consultant_id', $consultantId)
+                ->where('month', $month)
+                ->where('year', $year)
+                ->first();
+
+            if (!$craSignature) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'CRA non trouvé pour cette période'
+                ], 404);
+            }
+
+            // Vérifier que toutes les signatures sont présentes
+            $allSigned = $craSignature->consultant_signature_data 
+                && $craSignature->client_signature_data 
+                && $craSignature->manager_signature_data;
+
+            if (!$allSigned) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Toutes les signatures ne sont pas présentes. Email non envoyé.',
+                    'signatures' => [
+                        'consultant' => !empty($craSignature->consultant_signature_data),
+                        'client' => !empty($craSignature->client_signature_data),
+                        'manager' => !empty($craSignature->manager_signature_data)
+                    ]
+                ], 422);
+            }
+
+            // Réenvoyer l'email
+            try {
+                $this->sendSignedCRAPDF($craSignature);
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Email réenvoyé avec succès'
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Erreur lors de la réexpédition de l\'email CRA', [
+                    'consultant_id' => $consultantId,
+                    'month' => $month,
+                    'year' => $year,
+                    'error' => $e->getMessage()
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Erreur lors de l\'envoi de l\'email: ' . $e->getMessage()
+                ], 500);
+            }
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur de validation',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Erreur lors de la réexpédition de l\'email CRA: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

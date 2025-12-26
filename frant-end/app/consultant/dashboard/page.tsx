@@ -618,7 +618,7 @@ export default function UserDashboard() {
 
   // Rediriger vers la page de signature du CRA
   const handleSignCRA = (log: WorkLog) => {
-    router.push(`/sign-cra?month=${log.month}&year=${log.year}`)
+    router.push(`/consultant/sign-cra?month=${log.month}&year=${log.year}`)
   };
 
   // Load data from backend on component mount (seulement si workSchedules est vide)

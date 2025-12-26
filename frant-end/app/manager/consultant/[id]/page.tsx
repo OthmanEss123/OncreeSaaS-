@@ -755,7 +755,7 @@ export default function ConsultantDetailsPage() {
 
                             return (
                               <motion.button
-                                onClick={() => router.push(`/sign-cra?month=${log.month}&year=${log.year}&consultantId=${consultant.id}`)}
+                                onClick={() => router.push(`/manager/sign-cra?month=${log.month}&year=${log.year}&consultantId=${consultant.id}`)}
                                 className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}

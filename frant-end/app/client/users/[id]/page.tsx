@@ -623,7 +623,7 @@ export default function UserDetailsPage() {
   // Rediriger vers la page de signature du CRA
   const handleSignCRA = (log: WorkLog) => {
     const consultantId = user?.id || params.id
-    router.push(`/sign-cra?month=${log.month}&year=${log.year}&consultantId=${consultantId}`)
+    router.push(`/client/sign-cra?month=${log.month}&year=${log.year}&consultantId=${consultantId}`)
   }
   // Vérifier les signatures des CRA au chargement (optimisé : une seule requête)
   useEffect(() => {

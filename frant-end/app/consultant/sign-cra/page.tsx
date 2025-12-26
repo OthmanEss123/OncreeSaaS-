@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { WorkScheduleAPI, DashboardAPI, ConsultantAPI } from '@/lib/api'
+import { WorkScheduleAPI, DashboardAPI } from '@/lib/api'
 import type { Consultant, Project as ProjectType, WorkSchedule } from '@/lib/type'
 import jsPDF from 'jspdf'
 import { 
@@ -37,7 +37,6 @@ export default function SignCRAPage() {
   const searchParams = useSearchParams()
   const month = parseInt(searchParams.get('month') || '0')
   const year = parseInt(searchParams.get('year') || '0')
-  const consultantIdParam = searchParams.get('consultantId')
 
   const [consultant, setConsultant] = useState<Consultant | null>(null)
   const [project, setProject] = useState<ProjectType | null>(null)
@@ -46,32 +45,22 @@ export default function SignCRAPage() {
   const [signing, setSigning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [signatureData, setSignatureData] = useState<string | null>(null)
-  const [clientSignatureData, setClientSignatureData] = useState<string | null>(null)
-  const [managerSignatureData, setManagerSignatureData] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const clientCanvasRef = useRef<HTMLCanvasElement>(null)
-  const managerCanvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
-  const [isDrawingClient, setIsDrawingClient] = useState(false)
-  const [isDrawingManager, setIsDrawingManager] = useState(false)
-  const [userType, setUserType] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true)
         
-        // Vérifier l'authentification
+        // Vérifier l'authentification - Seul le consultant peut signer
         const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
         const currentUserType = typeof window !== 'undefined' ? localStorage.getItem('userType') : null
         
-        // Accepter consultant, client et manager
-        if (!token || !currentUserType || !['consultant', 'client', 'manager'].includes(currentUserType)) {
+        if (!token || currentUserType !== 'consultant') {
           router.push('/login')
           return
         }
-
-        setUserType(currentUserType)
 
         // Valider les paramètres
         if (!month || !year || month < 1 || month > 12) {
@@ -80,89 +69,11 @@ export default function SignCRAPage() {
           return
         }
 
-        let consultantData: Consultant | null = null
-        let projectData: ProjectType | null = null
-        let groupedData: any[] = []
-
-        // Charger les données selon le type d'utilisateur
-        if (currentUserType === 'consultant') {
-          // Pour les consultants, utiliser leur propre dashboard
-          const data = await DashboardAPI.consultantDashboard()
-          consultantData = data.consultant
-          projectData = data.project
-          groupedData = await WorkScheduleAPI.getGroupedByMonth()
-        } else {
-          // Pour client et manager, utiliser le consultantId fourni
-          const consultantId = consultantIdParam ? parseInt(consultantIdParam) : null
-          if (!consultantId) {
-            setError('ID consultant requis pour signer le CRA')
-            setLoading(false)
-            return
-          }
-
-          // Charger les données du consultant spécifié
-          consultantData = await ConsultantAPI.get(consultantId)
-          
-          // Charger les work schedules du consultant
-          const { api } = await import('@/lib/api')
-          const response = await api.get(`/consultants/${consultantId}`)
-          const consultantWithSchedules = response.data?.data || response.data
-          
-          if (consultantWithSchedules?.project) {
-            projectData = consultantWithSchedules.project
-          }
-
-          // Transformer les work schedules en format groupé
-          const schedules = consultantWithSchedules?.workSchedules || consultantWithSchedules?.work_schedules || []
-          
-          // Grouper par mois (similaire à getGroupedByMonth mais côté client)
-          const groupedMap = new Map<string, any>()
-          schedules.forEach((schedule: any) => {
-            const scheduleMonth = schedule.month || (schedule.date ? new Date(schedule.date).getMonth() + 1 : null)
-            const scheduleYear = schedule.year || (schedule.date ? new Date(schedule.date).getFullYear() : null)
-            
-            if (scheduleMonth && scheduleYear) {
-              const key = `${scheduleYear}-${scheduleMonth}`
-              if (!groupedMap.has(key)) {
-                groupedMap.set(key, {
-                  id: key,
-                  month: scheduleMonth,
-                  year: scheduleYear,
-                  monthName: new Date(scheduleYear, scheduleMonth - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }),
-                  daysWorked: 0,
-                  weekendWork: 0,
-                  absences: 0,
-                  absenceType: '',
-                  workType: '',
-                  workTypeDays: 0,
-                  details: []
-                })
-              }
-              
-              const group = groupedMap.get(key)
-              group.daysWorked += schedule.days_worked || 0
-              group.weekendWork += schedule.weekend_worked || 0
-              group.absences += schedule.absence_days || 0
-              group.workTypeDays += schedule.work_type_days || 0
-              
-              if (schedule.absence_type && schedule.absence_type !== 'none') {
-                if (schedule.leave_type?.name) {
-                  if (!group.absenceType.includes(schedule.leave_type.name)) {
-                    group.absenceType = group.absenceType ? `${group.absenceType}, ${schedule.leave_type.name}` : schedule.leave_type.name
-                  }
-                }
-              }
-              
-              if (schedule.work_type?.name) {
-                if (!group.workType.includes(schedule.work_type.name)) {
-                  group.workType = group.workType ? `${group.workType}, ${schedule.work_type.name}` : schedule.work_type.name
-                }
-              }
-            }
-          })
-          
-          groupedData = Array.from(groupedMap.values())
-        }
+        // Charger les données du consultant
+        const data = await DashboardAPI.consultantDashboard()
+        const consultantData = data.consultant
+        const projectData = data.project
+        const groupedData = await WorkScheduleAPI.getGroupedByMonth()
 
         setConsultant(consultantData)
         setProject(projectData)
@@ -186,9 +97,9 @@ export default function SignCRAPage() {
     }
 
     fetchData()
-  }, [month, year, consultantIdParam, router])
+  }, [month, year, router])
 
-  // Fonctions pour le canvas de signature
+  // Fonctions pour le canvas de signature consultant
   useEffect(() => {
     let ctx: CanvasRenderingContext2D | null = null
     let isDrawing = false
@@ -406,366 +317,6 @@ export default function SignCRAPage() {
     }
   }, [])
 
-  // Fonctions pour le canvas de signature client
-  useEffect(() => {
-    let ctx: CanvasRenderingContext2D | null = null
-    let isDrawing = false
-
-    const initCanvas = (): boolean => {
-      const canvas = clientCanvasRef.current
-      if (!canvas) return false
-
-      const rect = canvas.getBoundingClientRect()
-      const width = rect.width > 0 ? rect.width : 800
-      
-      canvas.width = width
-      canvas.height = 200
-      
-      const context = canvas.getContext('2d')
-      if (!context) return false
-      
-      context.strokeStyle = '#000000'
-      context.lineWidth = 3
-      context.lineCap = 'round'
-      context.lineJoin = 'round'
-      
-      ctx = context
-      return true
-    }
-
-    let initAttempts = 0
-    const tryInit = () => {
-      if (initCanvas()) {
-        attachEvents()
-      } else if (initAttempts < 20) {
-        initAttempts++
-        setTimeout(tryInit, 100)
-      }
-    }
-
-    const initTimer = setTimeout(tryInit, 200)
-
-    const getPos = (e: MouseEvent | TouchEvent) => {
-      const currentCanvas = clientCanvasRef.current
-      if (!currentCanvas) return null
-
-      const rect = currentCanvas.getBoundingClientRect()
-      let clientX: number, clientY: number
-      
-      if ('touches' in e) {
-        if (e.touches.length === 0) return null
-        clientX = e.touches[0].clientX
-        clientY = e.touches[0].clientY
-      } else {
-        clientX = (e as MouseEvent).clientX
-        clientY = (e as MouseEvent).clientY
-      }
-      
-      const scaleX = currentCanvas.width / rect.width
-      const scaleY = currentCanvas.height / rect.height
-      
-      return {
-        x: (clientX - rect.left) * scaleX,
-        y: (clientY - rect.top) * scaleY
-      }
-    }
-
-    const onMouseDown = (e: MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      
-      if (!ctx) {
-        if (!initCanvas()) return
-      }
-      if (!ctx) return
-      
-      const pos = getPos(e)
-      if (!pos) return
-      
-      isDrawing = true
-      setIsDrawingClient(true)
-      ctx.beginPath()
-      ctx.moveTo(pos.x, pos.y)
-      ctx.lineTo(pos.x + 0.5, pos.y + 0.5)
-      ctx.stroke()
-    }
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (!isDrawing || !ctx) return
-      e.preventDefault()
-      e.stopPropagation()
-      
-      const pos = getPos(e)
-      if (!pos) return
-      
-      ctx.lineTo(pos.x, pos.y)
-      ctx.stroke()
-    }
-
-    const onMouseUp = () => {
-      const currentCanvas = clientCanvasRef.current
-      if (isDrawing && currentCanvas) {
-        isDrawing = false
-        setIsDrawingClient(false)
-        const dataURL = currentCanvas.toDataURL('image/png')
-        setClientSignatureData(dataURL)
-      }
-    }
-
-    const onTouchStart = (e: TouchEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      
-      if (!ctx) {
-        if (!initCanvas()) return
-      }
-      if (!ctx) return
-      
-      const pos = getPos(e)
-      if (!pos) return
-      
-      isDrawing = true
-      setIsDrawingClient(true)
-      ctx.beginPath()
-      ctx.moveTo(pos.x, pos.y)
-      ctx.lineTo(pos.x + 0.5, pos.y + 0.5)
-      ctx.stroke()
-    }
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (!isDrawing || !ctx) return
-      e.preventDefault()
-      e.stopPropagation()
-      
-      const pos = getPos(e)
-      if (!pos) return
-      
-      ctx.lineTo(pos.x, pos.y)
-      ctx.stroke()
-    }
-
-    const onTouchEnd = () => {
-      const currentCanvas = clientCanvasRef.current
-      if (isDrawing && currentCanvas) {
-        isDrawing = false
-        setIsDrawingClient(false)
-        const dataURL = currentCanvas.toDataURL('image/png')
-        setClientSignatureData(dataURL)
-      }
-    }
-
-    const attachEvents = () => {
-      const currentCanvas = clientCanvasRef.current
-      if (!currentCanvas) return
-
-      currentCanvas.addEventListener('mousedown', onMouseDown)
-      currentCanvas.addEventListener('mousemove', onMouseMove)
-      currentCanvas.addEventListener('mouseup', onMouseUp)
-      currentCanvas.addEventListener('mouseleave', onMouseUp)
-      currentCanvas.addEventListener('mouseout', onMouseUp)
-      currentCanvas.addEventListener('touchstart', onTouchStart, { passive: false })
-      currentCanvas.addEventListener('touchmove', onTouchMove, { passive: false })
-      currentCanvas.addEventListener('touchend', onTouchEnd)
-      currentCanvas.addEventListener('touchcancel', onTouchEnd)
-    }
-
-    return () => {
-      clearTimeout(initTimer)
-      const currentCanvas = clientCanvasRef.current
-      if (currentCanvas) {
-        currentCanvas.removeEventListener('mousedown', onMouseDown)
-        currentCanvas.removeEventListener('mousemove', onMouseMove)
-        currentCanvas.removeEventListener('mouseup', onMouseUp)
-        currentCanvas.removeEventListener('mouseleave', onMouseUp)
-        currentCanvas.removeEventListener('mouseout', onMouseUp)
-        currentCanvas.removeEventListener('touchstart', onTouchStart)
-        currentCanvas.removeEventListener('touchmove', onTouchMove)
-        currentCanvas.removeEventListener('touchend', onTouchEnd)
-        currentCanvas.removeEventListener('touchcancel', onTouchEnd)
-      }
-    }
-  }, [])
-
-  // Fonctions pour le canvas de signature manager
-  useEffect(() => {
-    let ctx: CanvasRenderingContext2D | null = null
-    let isDrawing = false
-
-    const initCanvas = (): boolean => {
-      const canvas = managerCanvasRef.current
-      if (!canvas) return false
-
-      const rect = canvas.getBoundingClientRect()
-      const width = rect.width > 0 ? rect.width : 800
-      
-      canvas.width = width
-      canvas.height = 200
-      
-      const context = canvas.getContext('2d')
-      if (!context) return false
-      
-      context.strokeStyle = '#000000'
-      context.lineWidth = 3
-      context.lineCap = 'round'
-      context.lineJoin = 'round'
-      
-      ctx = context
-      return true
-    }
-
-    let initAttempts = 0
-    const tryInit = () => {
-      if (initCanvas()) {
-        attachEvents()
-      } else if (initAttempts < 20) {
-        initAttempts++
-        setTimeout(tryInit, 100)
-      }
-    }
-
-    const initTimer = setTimeout(tryInit, 200)
-
-    const getPos = (e: MouseEvent | TouchEvent) => {
-      const currentCanvas = managerCanvasRef.current
-      if (!currentCanvas) return null
-
-      const rect = currentCanvas.getBoundingClientRect()
-      let clientX: number, clientY: number
-      
-      if ('touches' in e) {
-        if (e.touches.length === 0) return null
-        clientX = e.touches[0].clientX
-        clientY = e.touches[0].clientY
-      } else {
-        clientX = (e as MouseEvent).clientX
-        clientY = (e as MouseEvent).clientY
-      }
-      
-      const scaleX = currentCanvas.width / rect.width
-      const scaleY = currentCanvas.height / rect.height
-      
-      return {
-        x: (clientX - rect.left) * scaleX,
-        y: (clientY - rect.top) * scaleY
-      }
-    }
-
-    const onMouseDown = (e: MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      
-      if (!ctx) {
-        if (!initCanvas()) return
-      }
-      if (!ctx) return
-      
-      const pos = getPos(e)
-      if (!pos) return
-      
-      isDrawing = true
-      setIsDrawingManager(true)
-      ctx.beginPath()
-      ctx.moveTo(pos.x, pos.y)
-      ctx.lineTo(pos.x + 0.5, pos.y + 0.5)
-      ctx.stroke()
-    }
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (!isDrawing || !ctx) return
-      e.preventDefault()
-      e.stopPropagation()
-      
-      const pos = getPos(e)
-      if (!pos) return
-      
-      ctx.lineTo(pos.x, pos.y)
-      ctx.stroke()
-    }
-
-    const onMouseUp = () => {
-      const currentCanvas = managerCanvasRef.current
-      if (isDrawing && currentCanvas) {
-        isDrawing = false
-        setIsDrawingManager(false)
-        const dataURL = currentCanvas.toDataURL('image/png')
-        setManagerSignatureData(dataURL)
-      }
-    }
-
-    const onTouchStart = (e: TouchEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      
-      if (!ctx) {
-        if (!initCanvas()) return
-      }
-      if (!ctx) return
-      
-      const pos = getPos(e)
-      if (!pos) return
-      
-      isDrawing = true
-      setIsDrawingManager(true)
-      ctx.beginPath()
-      ctx.moveTo(pos.x, pos.y)
-      ctx.lineTo(pos.x + 0.5, pos.y + 0.5)
-      ctx.stroke()
-    }
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (!isDrawing || !ctx) return
-      e.preventDefault()
-      e.stopPropagation()
-      
-      const pos = getPos(e)
-      if (!pos) return
-      
-      ctx.lineTo(pos.x, pos.y)
-      ctx.stroke()
-    }
-
-    const onTouchEnd = () => {
-      const currentCanvas = managerCanvasRef.current
-      if (isDrawing && currentCanvas) {
-        isDrawing = false
-        setIsDrawingManager(false)
-        const dataURL = currentCanvas.toDataURL('image/png')
-        setManagerSignatureData(dataURL)
-      }
-    }
-
-    const attachEvents = () => {
-      const currentCanvas = managerCanvasRef.current
-      if (!currentCanvas) return
-
-      currentCanvas.addEventListener('mousedown', onMouseDown)
-      currentCanvas.addEventListener('mousemove', onMouseMove)
-      currentCanvas.addEventListener('mouseup', onMouseUp)
-      currentCanvas.addEventListener('mouseleave', onMouseUp)
-      currentCanvas.addEventListener('mouseout', onMouseUp)
-      currentCanvas.addEventListener('touchstart', onTouchStart, { passive: false })
-      currentCanvas.addEventListener('touchmove', onTouchMove, { passive: false })
-      currentCanvas.addEventListener('touchend', onTouchEnd)
-      currentCanvas.addEventListener('touchcancel', onTouchEnd)
-    }
-
-    return () => {
-      clearTimeout(initTimer)
-      const currentCanvas = managerCanvasRef.current
-      if (currentCanvas) {
-        currentCanvas.removeEventListener('mousedown', onMouseDown)
-        currentCanvas.removeEventListener('mousemove', onMouseMove)
-        currentCanvas.removeEventListener('mouseup', onMouseUp)
-        currentCanvas.removeEventListener('mouseleave', onMouseUp)
-        currentCanvas.removeEventListener('mouseout', onMouseUp)
-        currentCanvas.removeEventListener('touchstart', onTouchStart)
-        currentCanvas.removeEventListener('touchmove', onTouchMove)
-        currentCanvas.removeEventListener('touchend', onTouchEnd)
-        currentCanvas.removeEventListener('touchcancel', onTouchEnd)
-      }
-    }
-  }, [])
-
   const clearSignature = () => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -773,24 +324,6 @@ export default function SignCRAPage() {
     if (!ctx) return
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     setSignatureData(null)
-  }
-
-  const clearClientSignature = () => {
-    const canvas = clientCanvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    setClientSignatureData(null)
-  }
-
-  const clearManagerSignature = () => {
-    const canvas = managerCanvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    setManagerSignatureData(null)
   }
 
   const generateAndDownloadPDF = async () => {
@@ -881,14 +414,7 @@ export default function SignCRAPage() {
 
     doc.setFontSize(14)
     doc.setFont('helvetica', 'bold')
-    const signatureLabel = userType === 'consultant' 
-      ? 'Signature du Consultant' 
-      : userType === 'client'
-      ? 'Signature du Client'
-      : userType === 'manager'
-      ? 'Signature du Manager'
-      : 'Signature'
-    doc.text(signatureLabel, 20, yPosition)
+    doc.text('Signature du Consultant', 20, yPosition)
     yPosition += 10
 
     // Convertir la signature base64 en image et l'ajouter au PDF
@@ -962,19 +488,13 @@ export default function SignCRAPage() {
       return
     }
 
-    // Vérifier qu'au moins une signature est présente
-    if (!signatureData && !clientSignatureData && !managerSignatureData) {
-      setError('Veuillez signer au moins une zone de signature')
+    // Vérifier que la signature est présente
+    if (!signatureData) {
+      setError('Veuillez signer dans la zone de signature')
       return
     }
 
-    const userLabel = userType === 'consultant' ? 'votre CRA' : `le CRA de ${consultant.name}`
-    const signaturesToSign = []
-    if (signatureData) signaturesToSign.push('consultant')
-    if (clientSignatureData) signaturesToSign.push('client')
-    if (managerSignatureData) signaturesToSign.push('manager')
-    
-    if (!confirm(`Êtes-vous sûr de vouloir signer ${userLabel} de ${workLog?.monthName} ?\n\nSignatures à enregistrer: ${signaturesToSign.join(', ')}\n\nCette action est irréversible et certifie que les informations du CRA sont exactes.`)) {
+    if (!confirm(`Êtes-vous sûr de vouloir signer votre CRA de ${workLog?.monthName} ?\n\nCette action est irréversible et certifie que les informations du CRA sont exactes.`)) {
       return
     }
 
@@ -982,28 +502,8 @@ export default function SignCRAPage() {
       setSigning(true)
       setError(null)
 
-      // Déterminer le consultant_id à utiliser
-      const targetConsultantId = userType === 'consultant' ? consultant.id : (consultantIdParam ? parseInt(consultantIdParam) : consultant.id)
-
-      // Envoyer la signature selon le type d'utilisateur
-      let signatureToSend: string | null = null
-      
-      if (userType === 'consultant' && signatureData) {
-        signatureToSend = signatureData
-      } else if (userType === 'client' && clientSignatureData) {
-        signatureToSend = clientSignatureData
-      } else if (userType === 'manager' && managerSignatureData) {
-        signatureToSend = managerSignatureData
-      }
-
-      if (!signatureToSend) {
-        setError('Veuillez signer dans la zone prévue pour votre rôle')
-        return
-      }
-
-      // Envoyer la signature (le backend déterminera automatiquement le signer_type)
-      // Le backend vérifiera si toutes les signatures sont présentes et enverra le PDF par email si c'est le cas
-      const result = await WorkScheduleAPI.signCRA(month, year, signatureToSend, targetConsultantId)
+      // Envoyer la signature du consultant
+      const result = await WorkScheduleAPI.signCRA(month, year, signatureData, consultant.id)
       const response = result.data as any
 
       if (!response.success) {
@@ -1011,19 +511,10 @@ export default function SignCRAPage() {
         return
       }
 
-      // Ne plus télécharger le PDF automatiquement
       // Le PDF sera envoyé par email automatiquement quand toutes les signatures (consultant, client, manager) seront présentes
       
-      // Rediriger selon le type d'utilisateur
-      if (userType === 'consultant') {
-        router.push('/consultant/dashboard?signed=true')
-      } else if (userType === 'client') {
-        router.push(`/client/users/${targetConsultantId}?signed=true`)
-      } else if (userType === 'manager') {
-        router.push(`/manager/consultant/${targetConsultantId}?signed=true`)
-      } else {
-        router.push('/consultant/dashboard?signed=true')
-      }
+      // Rediriger vers le dashboard consultant
+      router.push('/consultant/dashboard?signed=true')
     } catch (error: any) {
       console.error('Erreur lors de la signature:', error)
       const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors de la signature du CRA'
@@ -1058,15 +549,7 @@ export default function SignCRAPage() {
           <p className="text-muted-foreground mb-6">{error}</p>
           <button
             onClick={() => {
-              if (userType === 'consultant') {
-                router.push('/consultant/dashboard')
-              } else if (userType === 'client' && consultantIdParam) {
-                router.push(`/client/users/${consultantIdParam}`)
-              } else if (userType === 'manager' && consultantIdParam) {
-                router.push(`/manager/consultant/${consultantIdParam}`)
-              } else {
-                router.push('/consultant/dashboard')
-              }
+              router.push('/consultant/dashboard')
             }}
             className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/80 transition-colors"
           >
@@ -1085,15 +568,7 @@ export default function SignCRAPage() {
           <div className="flex items-center space-x-4">
             <button
               onClick={() => {
-                if (userType === 'consultant') {
-                  router.push('/consultant/dashboard')
-                } else if (userType === 'client' && consultantIdParam) {
-                  router.push(`/client/users/${consultantIdParam}`)
-                } else if (userType === 'manager' && consultantIdParam) {
-                  router.push(`/manager/consultant/${consultantIdParam}`)
-                } else {
-                  router.push('/consultant/dashboard')
-                }
+                router.push('/consultant/dashboard')
               }}
               className="text-muted-foreground hover:text-foreground transition-colors"
             >
@@ -1196,8 +671,7 @@ export default function SignCRAPage() {
         )}
 
         {/* Section de signature - Consultant */}
-        {userType === 'consultant' && (
-          <motion.div 
+        <motion.div 
             className="bg-card rounded-lg shadow-sm border border-border p-6 mb-6"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1254,129 +728,6 @@ export default function SignCRAPage() {
               )}
             </div>
           </motion.div>
-        )}
-
-        {/* Section de signature - Client */}
-        {userType === 'client' && (
-          <motion.div 
-            className="bg-card rounded-lg shadow-sm border border-border p-6 mb-6"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.25 }}
-          >
-            <h2 className="text-lg font-semibold text-card-foreground mb-4 flex items-center">
-              <PenTool className="h-5 w-5 mr-2 text-primary" />
-              Signature du Client
-            </h2>
-            
-            <div className="mb-4">
-              <p className="text-sm text-muted-foreground mb-3">
-                Veuillez signer dans la zone ci-dessous en utilisant votre souris ou votre doigt (sur écran tactile).
-              </p>
-              
-              {/* Canvas de signature client */}
-              <div className="border-2 border-dashed border-border rounded-lg bg-white dark:bg-gray-800 p-4">
-                <canvas
-                  ref={clientCanvasRef}
-                  className="w-full cursor-crosshair rounded"
-                  style={{ 
-                    height: '200px', 
-                    touchAction: 'none',
-                    display: 'block',
-                    width: '100%',
-                    border: '1px solid #d1d5db',
-                    backgroundColor: '#ffffff'
-                  }}
-                  width={800}
-                  height={200}
-                />
-              </div>
-              
-              {/* Bouton pour effacer */}
-              <div className="mt-3 flex justify-end">
-                <button
-                  onClick={clearClientSignature}
-                  className="flex items-center space-x-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  disabled={!clientSignatureData && !isDrawingClient}
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  <span>Effacer la signature</span>
-                </button>
-              </div>
-              
-              {/* Aperçu de la signature */}
-              {clientSignatureData && (
-                <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                  <div className="flex items-center space-x-2 text-green-700 dark:text-green-300">
-                    <CheckCircle className="h-4 w-4" />
-                    <span className="text-sm font-medium">Signature client enregistrée</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Section de signature - Manager */}
-        {userType === 'manager' && (
-          <motion.div 
-            className="bg-card rounded-lg shadow-sm border border-border p-6 mb-6"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.3 }}
-          >
-            <h2 className="text-lg font-semibold text-card-foreground mb-4 flex items-center">
-              <PenTool className="h-5 w-5 mr-2 text-primary" />
-              Signature du Manager
-            </h2>
-            
-            <div className="mb-4">
-              <p className="text-sm text-muted-foreground mb-3">
-                Veuillez signer dans la zone ci-dessous en utilisant votre souris ou votre doigt (sur écran tactile).
-              </p>
-              
-              {/* Canvas de signature manager */}
-              <div className="border-2 border-dashed border-border rounded-lg bg-white dark:bg-gray-800 p-4">
-                <canvas
-                  ref={managerCanvasRef}
-                  className="w-full cursor-crosshair rounded"
-                  style={{ 
-                    height: '200px', 
-                    touchAction: 'none',
-                    display: 'block',
-                    width: '100%',
-                    border: '1px solid #d1d5db',
-                    backgroundColor: '#ffffff'
-                  }}
-                  width={800}
-                  height={200}
-                />
-              </div>
-              
-              {/* Bouton pour effacer */}
-              <div className="mt-3 flex justify-end">
-                <button
-                  onClick={clearManagerSignature}
-                  className="flex items-center space-x-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  disabled={!managerSignatureData && !isDrawingManager}
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  <span>Effacer la signature</span>
-                </button>
-              </div>
-              
-              {/* Aperçu de la signature */}
-              {managerSignatureData && (
-                <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                  <div className="flex items-center space-x-2 text-green-700 dark:text-green-300">
-                    <CheckCircle className="h-4 w-4" />
-                    <span className="text-sm font-medium">Signature manager enregistrée</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
 
         {/* Avertissement et confirmation */}
         <motion.div 
@@ -1422,15 +773,7 @@ export default function SignCRAPage() {
         >
           <button
             onClick={() => {
-              if (userType === 'consultant') {
-                router.push('/consultant/dashboard')
-              } else if (userType === 'client' && consultantIdParam) {
-                router.push(`/client/users/${consultantIdParam}`)
-              } else if (userType === 'manager' && consultantIdParam) {
-                router.push(`/manager/consultant/${consultantIdParam}`)
-              } else {
-                router.push('/consultant/dashboard')
-              }
+              router.push('/consultant/dashboard')
             }}
             className="px-6 py-3 border border-border text-muted-foreground rounded-lg hover:bg-muted transition-colors"
             disabled={signing}
@@ -1439,10 +782,10 @@ export default function SignCRAPage() {
           </button>
           <motion.button
             onClick={handleSign}
-            disabled={signing || (userType === 'consultant' && !signatureData) || (userType === 'client' && !clientSignatureData) || (userType === 'manager' && !managerSignatureData)}
+            disabled={signing || !signatureData}
             className="bg-primary text-primary-foreground px-6 py-3 rounded-lg hover:bg-primary/80 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            whileHover={!signing && ((userType === 'consultant' && signatureData) || (userType === 'client' && clientSignatureData) || (userType === 'manager' && managerSignatureData)) ? { scale: 1.05 } : {}}
-            whileTap={!signing && ((userType === 'consultant' && signatureData) || (userType === 'client' && clientSignatureData) || (userType === 'manager' && managerSignatureData)) ? { scale: 0.95 } : {}}
+            whileHover={!signing && signatureData ? { scale: 1.05 } : {}}
+            whileTap={!signing && signatureData ? { scale: 0.95 } : {}}
           >
             {signing ? (
               <>
