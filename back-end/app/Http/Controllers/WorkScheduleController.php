@@ -694,8 +694,9 @@ class WorkScheduleController extends Controller
             'craSignature' => $craSignature
         ];
 
-        // Générer le PDF
+        // Générer le PDF en format paysage
         $pdf = Pdf::loadView('emails.signed-cra', $data);
+        $pdf->setPaper('a4', 'landscape');
         
         // Envoyer l'email
         try {
