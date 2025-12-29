@@ -477,6 +477,41 @@ export const WorkScheduleAPI = {
       consultant_id: consultantId
     })
     return response.data
+  },
+  // Télécharger le PDF du CRA signé
+  downloadSignedCRAPDF: async (consultantId: number, month: number, year: number) => {
+    try {
+      const response = await api.get('/download-signed-cra-pdf', {
+        params: { consultant_id: consultantId, month, year },
+        responseType: 'blob' // Important pour télécharger un fichier
+      })
+      
+      // Créer un lien de téléchargement
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      
+      // Extraire le nom du fichier depuis les headers ou utiliser un nom par défaut
+      const contentDisposition = response.headers['content-disposition']
+      let fileName = `CRA_Signe_${month}_${year}.pdf`
+      if (contentDisposition) {
+        const fileNameMatch = contentDisposition.match(/filename="(.+)"/)
+        if (fileNameMatch) {
+          fileName = fileNameMatch[1]
+        }
+      }
+      
+      link.setAttribute('download', fileName)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      
+      return { success: true }
+    } catch (error: any) {
+      console.error('Erreur lors du téléchargement du PDF:', error)
+      throw error
+    }
   }
 }
 

@@ -23,7 +23,8 @@ import {
   XCircle,
   Code,
   RefreshCw,
-  PenTool
+  PenTool,
+  Download
 } from 'lucide-react'
 
 export default function ConsultantDetailsPage() {
@@ -282,6 +283,32 @@ export default function ConsultantDetailsPage() {
       setWorkSchedules(consultantWorkSchedules)
     } catch (err: any) {
       console.error('Erreur lors du rafraîchissement:', err)
+    }
+  }
+
+  const handleDownloadPDF = async (log: WorkLogEntry) => {
+    if (!consultant) {
+      alert('❌ Consultant non trouvé')
+      return
+    }
+
+    const signatureKey = `${log.year}-${log.month}`
+    const signatures = signedCRAs[signatureKey]
+    const consultantSigned = signatures?.consultant !== undefined
+    const clientSigned = signatures?.client !== undefined
+    const managerSigned = signatures?.manager !== undefined
+
+    if (!consultantSigned || !clientSigned || !managerSigned) {
+      alert('❌ Le CRA doit être signé par toutes les parties (consultant, client, manager) avant de pouvoir télécharger le PDF.')
+      return
+    }
+
+    try {
+      await WorkScheduleAPI.downloadSignedCRAPDF(consultant.id, log.month, log.year)
+    } catch (error: any) {
+      console.error('Erreur lors du téléchargement du PDF:', error)
+      const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors du téléchargement du PDF'
+      alert(`❌ ${errorMessage}`)
     }
   }
 
@@ -765,6 +792,30 @@ export default function ConsultantDetailsPage() {
                                 <span>Signer</span>
                               </motion.button>
                             )
+                          })()}
+                          
+                          {/* Bouton Télécharger PDF (seulement si toutes les signatures sont présentes) */}
+                          {(() => {
+                            const signatureKey = `${log.year}-${log.month}`
+                            const signatures = signedCRAs[signatureKey]
+                            const consultantSigned = signatures?.consultant !== undefined
+                            const clientSigned = signatures?.client !== undefined
+                            const managerSigned = signatures?.manager !== undefined
+                            
+                            if (consultantSigned && clientSigned && managerSigned) {
+                              return (
+                                <motion.button
+                                  onClick={() => handleDownloadPDF(log)}
+                                  className="bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 text-sm font-medium ml-2"
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                  title="Télécharger le PDF du CRA signé">
+                                  <Download className="h-4 w-4" />
+                                  <span>Télécharger PDF</span>
+                                </motion.button>
+                              )
+                            }
+                            return null
                           })()}
                         </td>
                       </motion.tr>

@@ -23,7 +23,8 @@ import {
   RefreshCw,
   XCircle,
   X,
-  PenTool
+  PenTool,
+  Download
 } from 'lucide-react'
 import { ConsultantAPI, WorkScheduleAPI, ScheduleContestAPI, invalidateCache } from '@/lib/api'
 import type { Consultant, WorkSchedule, Project as ProjectType } from '@/lib/type'
@@ -624,6 +625,34 @@ export default function UserDetailsPage() {
   const handleSignCRA = (log: WorkLog) => {
     const consultantId = user?.id || params.id
     router.push(`/client/sign-cra?month=${log.month}&year=${log.year}&consultantId=${consultantId}`)
+  }
+
+  const handleDownloadPDF = async (log: WorkLog) => {
+    const consultantId = user?.id ? parseInt(user.id) : parseInt(params.id)
+    
+    if (!consultantId) {
+      alert('❌ Consultant non trouvé')
+      return
+    }
+
+    const signatureKey = `${log.year}-${log.month}`
+    const signatures = signedCRAs[signatureKey]
+    const consultantSigned = signatures?.consultant !== undefined
+    const clientSigned = signatures?.client !== undefined
+    const managerSigned = signatures?.manager !== undefined
+
+    if (!consultantSigned || !clientSigned || !managerSigned) {
+      alert('❌ Le CRA doit être signé par toutes les parties (consultant, client, manager) avant de pouvoir télécharger le PDF.')
+      return
+    }
+
+    try {
+      await WorkScheduleAPI.downloadSignedCRAPDF(consultantId, log.month, log.year)
+    } catch (error: any) {
+      console.error('Erreur lors du téléchargement du PDF:', error)
+      const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors du téléchargement du PDF'
+      alert(`❌ ${errorMessage}`)
+    }
   }
   // Vérifier les signatures des CRA au chargement (optimisé : une seule requête)
   useEffect(() => {
@@ -1290,6 +1319,45 @@ export default function UserDetailsPage() {
                           >
                             <XCircle className="h-3 w-3" />
                           </motion.button>
+                          
+                          {/* Bouton Télécharger PDF (seulement si toutes les signatures sont présentes) */}
+                          {(() => {
+                            const month = schedule.month || (schedule.date ? new Date(schedule.date).getMonth() + 1 : null)
+                            const year = schedule.year || (schedule.date ? new Date(schedule.date).getFullYear() : null)
+                            const signatureKey = month && year ? `${year}-${month}` : null
+                            const signatures = signatureKey ? signedCRAs[signatureKey] : null
+                            const consultantSigned = signatures?.consultant !== undefined
+                            const clientSigned = signatures?.client !== undefined
+                            const managerSigned = signatures?.manager !== undefined
+                            
+                            if (consultantSigned && clientSigned && managerSigned) {
+                              const log: WorkLog = {
+                                id: schedule.id.toString(),
+                                month: month || 1,
+                                year: year || new Date().getFullYear(),
+                                daysWorked: schedule.days_worked || 0,
+                                workDescription: '',
+                                additionalCharges: 0,
+                                totalCost: 0,
+                                weekendWork: schedule.weekend_worked || 0,
+                                absences: schedule.absence_days || 0,
+                                workType: schedule.work_type?.name || ''
+                              }
+                              
+                              return (
+                                <motion.button
+                                  onClick={() => handleDownloadPDF(log)}
+                                  className="bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-1 text-sm font-medium"
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                  title="Télécharger le PDF du CRA signé">
+                                  <Download className="h-3 w-3" />
+                                  <span>Télécharger PDF</span>
+                                </motion.button>
+                              )
+                            }
+                            return null
+                          })()}
                         </div>
                       </td>
                     </tr>

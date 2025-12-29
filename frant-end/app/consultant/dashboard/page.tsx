@@ -27,7 +27,8 @@ import {
   LogOut,
   CalendarDays,
   PenTool,
-  CheckCircle
+  CheckCircle,
+  Download
 } from 'lucide-react'
 
 // TypeScript Interfaces
@@ -619,6 +620,32 @@ export default function UserDashboard() {
   // Rediriger vers la page de signature du CRA
   const handleSignCRA = (log: WorkLog) => {
     router.push(`/consultant/sign-cra?month=${log.month}&year=${log.year}`)
+  };
+
+  const handleDownloadPDF = async (log: WorkLog) => {
+    if (!consultant) {
+      alert('❌ Consultant non trouvé')
+      return
+    }
+
+    const signatureKey = `${log.year}-${log.month}`
+    const signatures = signedCRAs[signatureKey]
+    const consultantSigned = signatures?.consultant !== undefined
+    const clientSigned = signatures?.client !== undefined
+    const managerSigned = signatures?.manager !== undefined
+
+    if (!consultantSigned || !clientSigned || !managerSigned) {
+      alert('❌ Le CRA doit être signé par toutes les parties (consultant, client, manager) avant de pouvoir télécharger le PDF.')
+      return
+    }
+
+    try {
+      await WorkScheduleAPI.downloadSignedCRAPDF(consultant.id, log.month, log.year)
+    } catch (error: any) {
+      console.error('Erreur lors du téléchargement du PDF:', error)
+      const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors du téléchargement du PDF'
+      alert(`❌ ${errorMessage}`)
+    }
   };
 
   // Load data from backend on component mount (seulement si workSchedules est vide)
@@ -1225,6 +1252,19 @@ export default function UserDashboard() {
                               <Send className="h-4 w-4" />
                               <span>Envoyer</span>
                             </motion.button>
+                            
+                            {/* Bouton Télécharger PDF (seulement si toutes les signatures sont présentes) */}
+                            {consultantSigned && clientSigned && managerSigned && (
+                              <motion.button
+                                onClick={() => handleDownloadPDF(log)}
+                                className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-1 text-sm font-medium"
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                title="Télécharger le PDF du CRA signé">
+                                <Download className="h-4 w-4" />
+                                <span>Télécharger PDF</span>
+                              </motion.button>
+                            )}
                           </div>
                         </td>
                       </motion.tr>
