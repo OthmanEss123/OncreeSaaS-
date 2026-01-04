@@ -16,6 +16,9 @@ class ProjectController extends Controller
             'description'=> 'nullable|string',
             'start_date' => 'nullable|date',
             'end_date'   => 'nullable|date|after_or_equal:start_date',
+            'id_manager' => 'nullable|exists:managers,id',
+            'id_comptable' => 'nullable|exists:comptables,id',
+            'id_rh'      => 'nullable|exists:rh,id',
             'consultants'=> 'nullable|array',
             'consultants.*'=> 'exists:consultants,id',
         ]);
@@ -40,6 +43,9 @@ class ProjectController extends Controller
         // Charger toutes les relations nécessaires pour la page de détails
         $project->load([
             'client',
+            'manager',
+            'rh',
+            'comptable',
             'consultants' => function ($query) {
                 // Charger les consultants avec leurs work schedules
                 $query->with(['workSchedules' => function ($wsQuery) {
@@ -58,7 +64,10 @@ class ProjectController extends Controller
             'name'       => 'sometimes|string|max:150',
             'description'=> 'nullable|string',
             'start_date' => 'nullable|date',
-            'end_date'   => 'nullable|date|after_or_equal:start_date',  
+            'end_date'   => 'nullable|date|after_or_equal:start_date',
+            'id_manager' => 'nullable|exists:managers,id',
+            'id_comptable' => 'nullable|exists:comptables,id',
+            'id_rh'      => 'nullable|exists:rh,id',
             'consultants'=> 'nullable|array',
             'consultants.*'=> 'exists:consultants,id',
         ]);

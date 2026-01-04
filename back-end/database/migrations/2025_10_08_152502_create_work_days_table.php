@@ -11,6 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('work_days')) {
+            // La table existe déjà, on ne fait rien
+            return;
+        }
+
         Schema::create('work_days', function (Blueprint $table) {
             $table->id();
             $table->timestamps();

@@ -18,7 +18,10 @@ import {
   MapPin,
   Phone,
   Mail,
-  Loader2
+  Loader2,
+  Briefcase,
+  UserCog,
+  Calculator
 } from 'lucide-react'
 import { ProjectAPI, invalidateCache } from '@/lib/api'
 import type { Project as ProjectType, Consultant as ConsultantType, WorkSchedule } from '@/lib/type'
@@ -146,6 +149,7 @@ export default function ProjectDetailsPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [project, setProject] = useState<Project | null>(null)
+  const [projectData, setProjectData] = useState<ProjectType | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showAcceptModal, setShowAcceptModal] = useState(false)
 
@@ -166,10 +170,16 @@ export default function ProjectDetailsPage() {
         // Debug: log the data structure
         console.log('📦 Project data received:', projectData)
         console.log('👥 Consultants:', projectData.consultants)
+        console.log('👔 Manager:', projectData.manager)
+        console.log('👤 RH:', projectData.rh)
+        console.log('📊 Comptable:', projectData.comptable)
         
         // Transform backend data to frontend format
         const transformedProject = transformProjectToFrontend(projectData)
         setProject(transformedProject)
+        
+        // Store manager, rh, comptable data for display
+        setProjectData(projectData)
       } catch (err: any) {
         console.error('❌ Erreur lors du chargement du projet:', err)
         console.error('Response data:', err.response?.data)
@@ -550,6 +560,101 @@ export default function ProjectDetailsPage() {
                 )}
               </div>
             </motion.div>
+
+            {/* Manager, RH, Comptable Info */}
+            {(projectData?.manager || projectData?.rh || projectData?.comptable) && (
+              <motion.div 
+                className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.35 }}
+              >
+                <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                  <Users className="h-5 w-5 text-red-600 mr-2" />
+                  Équipe Projet
+                </h2>
+                
+                <div className="space-y-4">
+                  {projectData.manager && (
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center space-x-3 mb-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                          <Briefcase className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-medium text-gray-900">Manager</h3>
+                          <p className="text-sm text-gray-600">{projectData.manager.name}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center space-x-2 text-gray-600">
+                          <Mail className="h-3 w-3" />
+                          <span>{projectData.manager.email}</span>
+                        </div>
+                        {projectData.manager.phone && (
+                          <div className="flex items-center space-x-2 text-gray-600">
+                            <Phone className="h-3 w-3" />
+                            <span>{projectData.manager.phone}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {projectData.rh && (
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center space-x-3 mb-3">
+                        <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                          <UserCog className="h-5 w-5 text-purple-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-medium text-gray-900">RH</h3>
+                          <p className="text-sm text-gray-600">{projectData.rh.name}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center space-x-2 text-gray-600">
+                          <Mail className="h-3 w-3" />
+                          <span>{projectData.rh.email}</span>
+                        </div>
+                        {projectData.rh.phone && (
+                          <div className="flex items-center space-x-2 text-gray-600">
+                            <Phone className="h-3 w-3" />
+                            <span>{projectData.rh.phone}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {projectData.comptable && (
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center space-x-3 mb-3">
+                        <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                          <Calculator className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-medium text-gray-900">Comptable</h3>
+                          <p className="text-sm text-gray-600">{projectData.comptable.name}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center space-x-2 text-gray-600">
+                          <Mail className="h-3 w-3" />
+                          <span>{projectData.comptable.email}</span>
+                        </div>
+                        {projectData.comptable.phone && (
+                          <div className="flex items-center space-x-2 text-gray-600">
+                            <Phone className="h-3 w-3" />
+                            <span>{projectData.comptable.phone}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
 
             {/* Budget Overview */}
             <motion.div 

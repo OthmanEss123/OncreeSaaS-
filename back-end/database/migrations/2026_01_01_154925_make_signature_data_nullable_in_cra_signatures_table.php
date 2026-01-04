@@ -11,14 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (Schema::hasTable('work_days')) {
-            // La table existe déjà, on ne fait rien
-            return;
-        }
-
-        Schema::create('work_days', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
+        Schema::table('cra_signatures', function (Blueprint $table) {
+            //
         });
     }
 
@@ -27,6 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('work_days');
+        Schema::table('cra_signatures', function (Blueprint $table) {
+            //
+        });
     }
 };

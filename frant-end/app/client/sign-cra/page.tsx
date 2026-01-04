@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { WorkScheduleAPI, ConsultantAPI } from '@/lib/api'
+import { WorkScheduleAPI, ConsultantAPI, UserSignatureAPI } from '@/lib/api'
 import type { Consultant, Project as ProjectType, WorkSchedule } from '@/lib/type'
 import jsPDF from 'jspdf'
 import { 
@@ -15,7 +15,8 @@ import {
   Loader2,
   Briefcase,
   User,
-  RotateCcw
+  RotateCcw,
+  Upload
 } from 'lucide-react'
 
 interface WorkLog {
@@ -44,9 +45,13 @@ export default function SignCRAPage() {
   const [workLog, setWorkLog] = useState<WorkLog | null>(null)
   const [loading, setLoading] = useState(true)
   const [signing, setSigning] = useState(false)
+  const [savingSignature, setSavingSignature] = useState(false)
+  const [signatureSaved, setSignatureSaved] = useState(false)
+  const [loadingSignature, setLoadingSignature] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [clientSignatureData, setClientSignatureData] = useState<string | null>(null)
   const clientCanvasRef = useRef<HTMLCanvasElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDrawingClient, setIsDrawingClient] = useState(false)
 
   useEffect(() => {
@@ -353,6 +358,239 @@ export default function SignCRAPage() {
     if (!ctx) return
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     setClientSignatureData(null)
+  }
+
+  // Fonction pour gérer l'upload d'une image de signature
+  const handleUploadSignature = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Vérifier que c'est une image
+    if (!file.type.startsWith('image/')) {
+      setError('Veuillez sélectionner un fichier image (PNG, JPG, etc.)')
+      return
+    }
+
+    // Vérifier la taille (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Le fichier est trop volumineux (max 5MB)')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const imageUrl = e.target?.result as string
+      
+      // Charger l'image et la dessiner sur le canvas
+      const img = new Image()
+      img.onload = () => {
+        const canvas = clientCanvasRef.current
+        if (!canvas) return
+
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+
+        // Effacer le canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        // Calculer les dimensions pour garder les proportions
+        const maxWidth = canvas.width
+        const maxHeight = canvas.height
+        let width = img.width
+        let height = img.height
+
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width
+          width = maxWidth
+        }
+        if (height > maxHeight) {
+          width = (width * maxHeight) / height
+          height = maxHeight
+        }
+
+        // Centrer l'image sur le canvas
+        const x = (canvas.width - width) / 2
+        const y = (canvas.height - height) / 2
+
+        // Dessiner l'image
+        ctx.drawImage(img, x, y, width, height)
+
+        // Sauvegarder la signature
+        const dataURL = canvas.toDataURL('image/png')
+        setClientSignatureData(dataURL)
+        setError(null)
+      }
+
+      img.onerror = () => {
+        setError('Erreur lors du chargement de l\'image')
+      }
+
+      img.src = imageUrl
+    }
+
+    reader.onerror = () => {
+      setError('Erreur lors de la lecture du fichier')
+    }
+
+    reader.readAsDataURL(file)
+
+    // Réinitialiser l'input pour permettre de sélectionner le même fichier
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  // Fonction pour enregistrer la signature dans user_signatures
+  const handleSaveSignature = async () => {
+    if (!clientSignatureData) {
+      setError('Veuillez d\'abord créer ou télécharger une signature')
+      return
+    }
+
+    if (!consultant) {
+      setError('Consultant non trouvé')
+      return
+    }
+
+    const consultantId = consultantIdParam ? parseInt(consultantIdParam) : consultant.id
+
+    try {
+      setSavingSignature(true)
+      setError(null)
+
+      // Enregistrer la signature dans user_signatures
+      const result = await UserSignatureAPI.save(clientSignatureData, {
+        documentType: 'CRA',
+        consultantId: consultantId,
+        month: month,
+        year: year,
+        metadata: {
+          action: 'client_signature_saved',
+          consultant_name: consultant.name,
+          month_name: workLog?.monthName || `${month}/${year}`
+        }
+      })
+
+      const response = result.data as any
+
+      if (!response.success) {
+        setError(response.message || 'Erreur lors de l\'enregistrement de la signature')
+        return
+      }
+
+      // Marquer que la signature est enregistrée
+      setSignatureSaved(true)
+      
+      // Afficher un message de succès
+      alert('Signature enregistrée avec succès dans la base de données!')
+    } catch (error: any) {
+      console.error('Erreur lors de l\'enregistrement de la signature:', error)
+      const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors de l\'enregistrement de la signature'
+      setError(errorMessage)
+    } finally {
+      setSavingSignature(false)
+    }
+  }
+
+  // Fonction pour importer/charger la signature depuis user_signatures
+  const handleImportSignature = async () => {
+    if (!consultant) {
+      setError('Consultant non trouvé')
+      return
+    }
+
+    const consultantId = consultantIdParam ? parseInt(consultantIdParam) : consultant.id
+
+    try {
+      setLoadingSignature(true)
+      setError(null)
+
+      // Récupérer les signatures pour ce CRA
+      const response = await UserSignatureAPI.getByCRA(consultantId, month, year)
+      
+      // L'API backend retourne { success: true, data: [...] }
+      // cachedGet retourne response.data qui sera { success: true, data: [...] }
+      let signatures: any[] = []
+      if (Array.isArray(response)) {
+        signatures = response
+      } else if (response && typeof response === 'object') {
+        const apiResponse = response as any
+        if (apiResponse.success && Array.isArray(apiResponse.data)) {
+          signatures = apiResponse.data
+        } else if (Array.isArray(apiResponse)) {
+          signatures = apiResponse
+        }
+      }
+      
+      if (!signatures || signatures.length === 0) {
+        setError('Aucune signature enregistrée trouvée pour ce CRA')
+        return
+      }
+
+      // Trouver la signature du client (user_type contient 'Client')
+      const clientSignature = signatures.find((sig: any) => {
+        const userType = typeof sig.user_type === 'string' ? sig.user_type : ''
+        return userType.includes('Client') || userType === 'App\\Models\\Client'
+      })
+
+      if (!clientSignature || !clientSignature.signature_data) {
+        setError('Aucune signature client trouvée')
+        return
+      }
+
+      // Charger la signature sur le canvas
+      const img = new Image()
+      img.onload = () => {
+        const canvas = clientCanvasRef.current
+        if (!canvas) return
+
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+
+        // Effacer le canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        // Calculer les dimensions pour garder les proportions
+        const maxWidth = canvas.width
+        const maxHeight = canvas.height
+        let width = img.width
+        let height = img.height
+
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width
+          width = maxWidth
+        }
+        if (height > maxHeight) {
+          width = (width * maxHeight) / height
+          height = maxHeight
+        }
+
+        // Centrer l'image sur le canvas
+        const x = (canvas.width - width) / 2
+        const y = (canvas.height - height) / 2
+
+        // Dessiner l'image
+        ctx.drawImage(img, x, y, width, height)
+
+        // Sauvegarder la signature
+        const dataURL = canvas.toDataURL('image/png')
+        setClientSignatureData(dataURL)
+        setError(null)
+        alert('Signature importée avec succès!')
+      }
+
+      img.onerror = () => {
+        setError('Erreur lors du chargement de l\'image de la signature')
+      }
+
+      img.src = clientSignature.signature_data
+    } catch (error: any) {
+      console.error('Erreur lors de l\'importation de la signature:', error)
+      const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors de l\'importation de la signature'
+      setError(errorMessage)
+    } finally {
+      setLoadingSignature(false)
+    }
   }
 
   const generateAndDownloadPDF = async () => {
@@ -724,7 +962,62 @@ export default function SignCRAPage() {
             <div className="mb-4">
               <p className="text-sm text-muted-foreground mb-3">
                 Veuillez signer dans la zone ci-dessous en utilisant votre souris ou votre doigt (sur écran tactile).
+                Vous pouvez également télécharger une image de votre signature.
               </p>
+              
+              {/* Input file caché */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleUploadSignature}
+                className="hidden"
+              />
+              
+              {/* Boutons pour uploader et enregistrer/importer la signature */}
+              <div className="mb-3 flex justify-end gap-3">
+               
+                
+                {signatureSaved ? (
+                  <button
+                    onClick={handleImportSignature}
+                    type="button"
+                    disabled={loadingSignature}
+                    className="flex items-center space-x-2 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loadingSignature ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Chargement...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4" />
+                        <span>Importer la signature</span>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSaveSignature}
+                    type="button"
+                    disabled={!clientSignatureData || savingSignature}
+                    className="flex items-center space-x-2 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingSignature ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Enregistrement...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-4 w-4" />
+                        <span>Enregistrer la signature</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
               
               {/* Canvas de signature client */}
               <div className="border-2 border-dashed border-border rounded-lg bg-white dark:bg-gray-800 p-4">

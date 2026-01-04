@@ -24,7 +24,8 @@ import {
   XCircle,
   X,
   PenTool,
-  Download
+  Download,
+  Eye
 } from 'lucide-react'
 import { ConsultantAPI, WorkScheduleAPI, ScheduleContestAPI, invalidateCache } from '@/lib/api'
 import type { Consultant, WorkSchedule, Project as ProjectType } from '@/lib/type'
@@ -252,6 +253,14 @@ export default function UserDetailsPage() {
     manager?: { signed_at: string };
   }>>({})
   const [currentUserType, setCurrentUserType] = useState<string | null>(null)
+  const [showViewCRAModal, setShowViewCRAModal] = useState(false)
+  const [selectedCRALog, setSelectedCRALog] = useState<WorkLog | null>(null)
+  const [selectedCRASignatures, setSelectedCRASignatures] = useState<{
+    consultant?: { signature_data?: string; signed_at: string };
+    client?: { signature_data?: string; signed_at: string };
+    manager?: { signature_data?: string; signed_at: string };
+  } | null>(null)
+  const [loadingSignatures, setLoadingSignatures] = useState(false)
   
   // Référence pour éviter les appels API multiples
   const checkedPeriodsRef = useRef<string>('')
@@ -628,9 +637,9 @@ export default function UserDetailsPage() {
   }
 
   const handleDownloadPDF = async (log: WorkLog) => {
-    const consultantId = user?.id ? parseInt(user.id) : parseInt(params.id)
+    const consultantId = user?.id ? parseInt(user.id) : parseInt(params.id as string)
     
-    if (!consultantId) {
+    if (!consultantId || isNaN(consultantId)) {
       alert('❌ Consultant non trouvé')
       return
     }
@@ -652,6 +661,34 @@ export default function UserDetailsPage() {
       console.error('Erreur lors du téléchargement du PDF:', error)
       const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors du téléchargement du PDF'
       alert(`❌ ${errorMessage}`)
+    }
+  }
+
+  const handleViewSignedCRA = async (log: WorkLog) => {
+    setSelectedCRALog(log)
+    setLoadingSignatures(true)
+    setShowViewCRAModal(true)
+    
+    try {
+      const consultantId = user?.id ? parseInt(user.id) : parseInt(params.id as string)
+      const result = await WorkScheduleAPI.getCRASignatures(log.month, log.year, consultantId)
+      
+      if (result.success && result.signatures) {
+        setSelectedCRASignatures(result.signatures)
+      } else {
+        // Fallback aux signatures existantes si l'API échoue
+        const signatureKey = `${log.year}-${log.month}`
+        const signatures = signedCRAs[signatureKey] || null
+        setSelectedCRASignatures(signatures)
+      }
+    } catch (error) {
+      console.error('Erreur lors de la récupération des signatures:', error)
+      // Fallback aux signatures existantes
+      const signatureKey = `${log.year}-${log.month}`
+      const signatures = signedCRAs[signatureKey] || null
+      setSelectedCRASignatures(signatures)
+    } finally {
+      setLoadingSignatures(false)
     }
   }
   // Vérifier les signatures des CRA au chargement (optimisé : une seule requête)
@@ -784,8 +821,8 @@ export default function UserDetailsPage() {
           <div className="flex items-center justify-between py-6">
             <div className="flex items-center space-x-4">
               <motion.button
-                onClick={() => router.back()}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                onClick={() => router.push(`/client/dashboard`)}
+                className="p-2 hover:bg-g ray-100 rounded-lg transition-colors"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
@@ -1358,6 +1395,43 @@ export default function UserDetailsPage() {
                             }
                             return null
                           })()}
+                          {/* Bouton pour voir le CRA signé */}
+                            {(() => {
+                              const month = schedule.month || (schedule.date ? new Date(schedule.date).getMonth() + 1 : null)
+                              const year = schedule.year || (schedule.date ? new Date(schedule.date).getFullYear() : null)
+                              const signatureKey = month && year ? `${year}-${month}` : null
+                              const signatures = signatureKey ? signedCRAs[signatureKey] : null
+                              const consultantSigned = signatures?.consultant !== undefined
+                              const clientSigned = signatures?.client !== undefined
+                              const managerSigned = signatures?.manager !== undefined
+                              if (consultantSigned && clientSigned && managerSigned) {
+                                const log: WorkLog = {
+                                  id: schedule.id.toString(),
+                                  month: month || 1,
+                                  year: year || new Date().getFullYear(),
+                                  daysWorked: schedule.days_worked || 0,
+                                  workDescription: '',
+                                  additionalCharges: 0,
+                                  totalCost: 0,
+                                  weekendWork: schedule.weekend_worked || 0,
+                                  absences: schedule.absence_days || 0,
+                                  workType: schedule.work_type?.name || ''
+                                }
+                                
+                                return (
+                                  <motion.button
+                                    onClick={() => handleViewSignedCRA(log)}
+                                    className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-1 text-sm font-medium" 
+                                    disabled={validatingScheduleId === schedule.id || contestingScheduleId === schedule.id}
+                                    whileHover={{ scale: validatingScheduleId !== schedule.id && contestingScheduleId !== schedule.id ? 1.05 : 1 }}
+                                    whileTap={{ scale: validatingScheduleId !== schedule.id && contestingScheduleId !== schedule.id ? 0.95 : 1 }}
+                                    title="Voir le CRA signé">
+                                    <Eye className="h-3 w-3" />
+                                    <span>Voir CRA</span>
+                                  </motion.button>
+                                )
+                              } return null
+                            })()}
                         </div>
                       </td>
                     </tr>
@@ -1543,6 +1617,217 @@ export default function UserDetailsPage() {
                   </>
                 )}
               </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* View Signed CRA Modal */}
+      {showViewCRAModal && selectedCRALog && (
+        <div className="fixed inset-0 bg-gray-300 bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <motion.div 
+            className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center space-x-3">
+                <CheckCircle className="h-6 w-6 text-green-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  CRA Signé - {new Date(selectedCRALog.year, selectedCRALog.month - 1, 1).toLocaleDateString('fr-FR', { 
+                    month: 'long', 
+                    year: 'numeric' 
+                  })}
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowViewCRAModal(false)
+                  setSelectedCRALog(null)
+                  setSelectedCRASignatures(null)
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Fermer"
+              >
+                <X className="h-5 w-5 text-gray-600" />
+              </button>
+            </div>
+
+            {/* Informations du CRA */}
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Détails du CRA</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600">Jours travaillés</p>
+                  <p className="text-lg font-semibold text-gray-900">{selectedCRALog.daysWorked}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Week-end travaillés</p>
+                  <p className="text-lg font-semibold text-gray-900">{selectedCRALog.weekendWork}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Jours d'absence</p>
+                  <p className="text-lg font-semibold text-gray-900">{selectedCRALog.absences}</p>
+                </div>
+                {selectedCRALog.workType && (
+                  <div>
+                    <p className="text-sm text-gray-600">Type de travail</p>
+                    <p className="text-lg font-semibold text-gray-900">{selectedCRALog.workType}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Signatures */}
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Signatures</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Signature Consultant */}
+                <div className="border-2 border-blue-200 rounded-lg p-4 bg-blue-50">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <CheckCircle className="h-5 w-5 text-blue-600" />
+                    <h5 className="font-semibold text-gray-900">Consultant</h5>
+                  </div>
+                  {loadingSignatures ? (
+                    <div className="bg-white rounded border border-blue-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                    </div>
+                  ) : selectedCRASignatures?.consultant ? (
+                    <div>
+                      <div className="bg-white rounded border border-blue-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                        {selectedCRASignatures.consultant.signature_data ? (
+                          <img 
+                            src={selectedCRASignatures.consultant.signature_data} 
+                            alt="Signature Consultant" 
+                            className="max-w-full max-h-[80px] object-contain"
+                          />
+                        ) : (
+                          <CheckCircle className="h-8 w-8 text-blue-600" />
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        Signé le: <span className="font-medium text-gray-900">
+                          {new Date(selectedCRASignatures.consultant.signed_at).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Non signé</p>
+                  )}
+                </div>
+
+                {/* Signature Client */}
+                <div className="border-2 border-green-200 rounded-lg p-4 bg-green-50">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <h5 className="font-semibold text-gray-900">Client</h5>
+                  </div>
+                  {loadingSignatures ? (
+                    <div className="bg-white rounded border border-green-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-green-600" />
+                    </div>
+                  ) : selectedCRASignatures?.client ? (
+                    <div>
+                      <div className="bg-white rounded border border-green-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                        {selectedCRASignatures.client.signature_data ? (
+                          <img 
+                            src={selectedCRASignatures.client.signature_data} 
+                            alt="Signature Client" 
+                            className="max-w-full max-h-[80px] object-contain"
+                          />
+                        ) : (
+                          <CheckCircle className="h-8 w-8 text-green-600" />
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        Signé le: <span className="font-medium text-gray-900">
+                          {new Date(selectedCRASignatures.client.signed_at).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Non signé</p>
+                  )}
+                </div>
+
+                {/* Signature Manager */}
+                <div className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <CheckCircle className="h-5 w-5 text-red-600" />
+                    <h5 className="font-semibold text-gray-900">Manager</h5>
+                  </div>
+                  {loadingSignatures ? (
+                    <div className="bg-white rounded border border-red-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-red-600" />
+                    </div>
+                  ) : selectedCRASignatures?.manager ? (
+                    <div>
+                      <div className="bg-white rounded border border-red-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                        {selectedCRASignatures.manager.signature_data ? (
+                          <img 
+                            src={selectedCRASignatures.manager.signature_data} 
+                            alt="Signature Manager" 
+                            className="max-w-full max-h-[80px] object-contain"
+                          />
+                        ) : (
+                          <CheckCircle className="h-8 w-8 text-red-600" />
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        Signé le: <span className="font-medium text-gray-900">
+                          {new Date(selectedCRASignatures.manager.signed_at).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Non signé</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end space-x-3 pt-4 border-t">
+              <button
+                onClick={() => {
+                  setShowViewCRAModal(false)
+                  setSelectedCRALog(null)
+                  setSelectedCRASignatures(null)
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Fermer
+              </button>
+              {selectedCRALog && (
+                <button
+                  onClick={() => {
+                    handleDownloadPDF(selectedCRALog)
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Télécharger PDF</span>
+                </button>
+              )}
             </div>
           </motion.div>
         </div>

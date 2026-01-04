@@ -1844,6 +1844,31 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
         console.log(`  - Total jours travaillés: ${totalDaysWorked} (basé sur ${monthSelectedDays.length} périodes)`)
         console.log(`  - Total weekend travaillé: ${totalWeekendWorked}`)
         
+        // Convertir les IDs en nombres pour éviter les erreurs de validation
+        // Si work_type_days > 0, on doit avoir un work_type_id valide
+        let workTypeId: number | null = null
+        if (formData.workType) {
+          workTypeId = typeof formData.workType === 'string' ? parseInt(formData.workType) : formData.workType
+          // Vérifier que l'ID est valide (pas NaN)
+          if (isNaN(workTypeId) || workTypeId <= 0) {
+            workTypeId = null
+          }
+        }
+        // Si work_type_days > 0 mais pas de work_type_id, utiliser le workType par défaut
+        if ((workTypeDays || 0) > 0 && !workTypeId && formData.workType) {
+          workTypeId = typeof formData.workType === 'string' ? parseInt(formData.workType) : formData.workType
+        }
+        
+        // Convertir leave_type_id
+        let leaveTypeId: number | null = null
+        if (entry.leaveType && entry.leaveType !== 0) {
+          leaveTypeId = typeof entry.leaveType === 'string' ? parseInt(entry.leaveType) : entry.leaveType
+          // Vérifier que l'ID est valide (pas NaN)
+          if (isNaN(leaveTypeId) || leaveTypeId <= 0) {
+            leaveTypeId = null
+          }
+        }
+        
         const workScheduleData = {
           date: dateString,
           period: null, // NULL pour les entrées mensuelles
@@ -1860,12 +1885,12 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
             weekendWork: totalWeekendWorked,
             absences: entry.absences
           }),
-          work_type_id: formData.workType || null,
+          work_type_id: workTypeId,
           work_type_days: workTypeDays || 0,
           days_worked: totalDaysWorked,
           weekend_worked: totalWeekendWorked,
           absence_days: entry.absences,
-          leave_type_id: entry.leaveType && entry.leaveType !== 0 ? entry.leaveType : null,
+          leave_type_id: leaveTypeId,
           month: entry.month,
           year: entry.year
         }
@@ -1887,7 +1912,16 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
           console.error('❌ Erreur lors de la sauvegarde de', `${entry.month}/${entry.year}`, ':', error)
           if (error.response?.data) {
             console.error('Détails de l\'erreur:', error.response.data)
+            // Afficher les erreurs de validation si disponibles
+            if (error.response.data.errors) {
+              console.error('Erreurs de validation:', JSON.stringify(error.response.data.errors, null, 2))
+            }
+            if (error.response.data.message) {
+              console.error('Message d\'erreur:', error.response.data.message)
+            }
           }
+          // Afficher les données envoyées pour le débogage
+          console.error('📋 Données envoyées qui ont causé l\'erreur:', JSON.stringify(workScheduleData, null, 2))
           throw error
         }
       }

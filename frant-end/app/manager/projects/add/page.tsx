@@ -4,8 +4,8 @@ import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/use-auth'
-import { ProjectAPI, ConsultantAPI } from '@/lib/api'
-import { Consultant } from '@/lib/type'
+import { ProjectAPI, ConsultantAPI, RhAPI, ComptableAPI } from '@/lib/api'
+import { Consultant, Rh, Comptable } from '@/lib/type'
 import { 
   ArrowLeft, 
   Save, 
@@ -14,7 +14,9 @@ import {
   AlertCircle,
   Plus,
   Users,
-  Briefcase
+  Briefcase,
+  UserCog,
+  Calculator
 } from 'lucide-react'
 
 // TypeScript Interfaces
@@ -24,6 +26,8 @@ interface ProjectFormData {
   start_date: string
   end_date: string
   consultants: number[]
+  id_rh: number | null
+  id_comptable: number | null
 }
 
 export default function AddProjectPage() {
@@ -34,13 +38,19 @@ export default function AddProjectPage() {
   const [success, setSuccess] = useState(false)
   const [consultants, setConsultants] = useState<Consultant[]>([])
   const [loadingConsultants, setLoadingConsultants] = useState(true)
+  const [rhList, setRhList] = useState<Rh[]>([])
+  const [loadingRh, setLoadingRh] = useState(true)
+  const [comptables, setComptables] = useState<Comptable[]>([])
+  const [loadingComptables, setLoadingComptables] = useState(true)
   
   const [formData, setFormData] = useState<ProjectFormData>({
     name: '',
     description: '',
     start_date: '',
     end_date: '',
-    consultants: []
+    consultants: [],
+    id_rh: null,
+    id_comptable: null
   })
 
   // Charger les consultants du client
@@ -65,6 +75,46 @@ export default function AddProjectPage() {
       }
     }
     fetchConsultants()
+  }, [user])
+
+  // Charger les RH du client
+  useEffect(() => {
+    const fetchRh = async () => {
+      if (user?.client_id) {
+        try {
+          setLoadingRh(true)
+          const response = await RhAPI.all()
+          const allRh: Rh[] = Array.isArray(response.data) ? response.data : (Array.isArray(response) ? response : [])
+          const clientRh = allRh.filter((r: Rh) => Number(r.client_id) === Number(user.client_id))
+          setRhList(clientRh)
+        } catch (error) {
+          console.error('Erreur lors du chargement des RH:', error)
+        } finally {
+          setLoadingRh(false)
+        }
+      }
+    }
+    fetchRh()
+  }, [user])
+
+  // Charger les comptables du client
+  useEffect(() => {
+    const fetchComptables = async () => {
+      if (user?.client_id) {
+        try {
+          setLoadingComptables(true)
+          const response = await ComptableAPI.all()
+          const allComptables: Comptable[] = Array.isArray(response) ? response : []
+          const clientComptables = allComptables.filter((c: Comptable) => Number(c.client_id) === Number(user.client_id))
+          setComptables(clientComptables)
+        } catch (error) {
+          console.error('Erreur lors du chargement des comptables:', error)
+        } finally {
+          setLoadingComptables(false)
+        }
+      }
+    }
+    fetchComptables()
   }, [user])
 
   // Redirection si pas authentifié
@@ -126,7 +176,9 @@ export default function AddProjectPage() {
         start_date: formData.start_date || null,
         end_date: formData.end_date || null,
         client_id: user?.client_id, // Utiliser l'ID du client du manager
-        consultant_ids: formData.consultants
+        consultants: formData.consultants,
+        id_rh: formData.id_rh || null,
+        id_comptable: formData.id_comptable || null
       }
       
       // Appel à l'API pour créer le projet
@@ -367,6 +419,178 @@ export default function AddProjectPage() {
             )}
           </motion.div>
 
+          {/* RH Selection */}
+          <motion.div 
+            className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.25 }}
+          >
+            <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center justify-between">
+              <span className="flex items-center">
+                <UserCog className="h-5 w-5 text-indigo-600 mr-2" />
+                RH Assigné(e)
+              </span>
+              {!loadingRh && (
+                <span className="text-sm text-gray-500 font-normal">
+                  ({rhList.length} disponible{rhList.length > 1 ? 's' : ''})
+                </span>
+              )}
+            </h2>
+            
+            {loadingRh ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                <span className="ml-3 text-gray-600">Chargement des RH...</span>
+              </div>
+            ) : rhList.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <UserCog className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                <p className="font-medium">Aucun RH disponible pour ce client</p>
+                <p className="text-sm text-gray-400 mt-2">
+                  Veuillez d'abord créer des RH pour votre entreprise depuis le dashboard
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600 mb-4">
+                  Sélectionnez le/la RH responsable de ce projet (optionnel)
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label
+                    className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <input
+                      type="radio"
+                      name="rh"
+                      checked={formData.id_rh === null}
+                      onChange={() => setFormData(prev => ({ ...prev, id_rh: null }))}
+                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                    />
+                    <div className="ml-3">
+                      <p className="text-sm font-medium text-gray-900">Aucun RH</p>
+                      <p className="text-xs text-gray-400">Ne pas assigner de RH</p>
+                    </div>
+                  </label>
+                  {rhList.map((rh) => (
+                    <label
+                      key={rh.id}
+                      className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="radio"
+                        name="rh"
+                        checked={formData.id_rh === rh.id}
+                        onChange={() => setFormData(prev => ({ ...prev, id_rh: rh.id }))}
+                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                      />
+                      <div className="ml-3">
+                        <p className="text-sm font-medium text-gray-900">
+                          {rh.name}
+                        </p>
+                        <p className="text-xs text-gray-500">{rh.email}</p>
+                        {rh.phone && (
+                          <p className="text-xs text-gray-400 mt-1">{rh.phone}</p>
+                        )}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                {formData.id_rh !== null && (
+                  <p className="text-sm text-green-600 mt-4">
+                    RH sélectionné(e)
+                  </p>
+                )}
+              </div>
+            )}
+          </motion.div>
+
+          {/* Comptable Selection */}
+          <motion.div 
+            className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.3 }}
+          >
+            <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center justify-between">
+              <span className="flex items-center">
+                <Calculator className="h-5 w-5 text-indigo-600 mr-2" />
+                Comptable Assigné(e)
+              </span>
+              {!loadingComptables && (
+                <span className="text-sm text-gray-500 font-normal">
+                  ({comptables.length} disponible{comptables.length > 1 ? 's' : ''})
+                </span>
+              )}
+            </h2>
+            
+            {loadingComptables ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                <span className="ml-3 text-gray-600">Chargement des comptables...</span>
+              </div>
+            ) : comptables.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Calculator className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                <p className="font-medium">Aucun comptable disponible pour ce client</p>
+                <p className="text-sm text-gray-400 mt-2">
+                  Veuillez d'abord créer des comptables pour votre entreprise depuis le dashboard
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600 mb-4">
+                  Sélectionnez le/la comptable responsable de ce projet (optionnel)
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label
+                    className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <input
+                      type="radio"
+                      name="comptable"
+                      checked={formData.id_comptable === null}
+                      onChange={() => setFormData(prev => ({ ...prev, id_comptable: null }))}
+                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                    />
+                    <div className="ml-3">
+                      <p className="text-sm font-medium text-gray-900">Aucun comptable</p>
+                      <p className="text-xs text-gray-400">Ne pas assigner de comptable</p>
+                    </div>
+                  </label>
+                  {comptables.map((comptable) => (
+                    <label
+                      key={comptable.id}
+                      className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="radio"
+                        name="comptable"
+                        checked={formData.id_comptable === comptable.id}
+                        onChange={() => setFormData(prev => ({ ...prev, id_comptable: comptable.id }))}
+                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                      />
+                      <div className="ml-3">
+                        <p className="text-sm font-medium text-gray-900">
+                          {comptable.name}
+                        </p>
+                        <p className="text-xs text-gray-500">{comptable.email}</p>
+                        {comptable.phone && (
+                          <p className="text-xs text-gray-400 mt-1">{comptable.phone}</p>
+                        )}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                {formData.id_comptable !== null && (
+                  <p className="text-sm text-green-600 mt-4">
+                    Comptable sélectionné(e)
+                  </p>
+                )}
+              </div>
+            )}
+          </motion.div>
+
           {/* Success Message */}
           {success && (
             <motion.div 
@@ -444,6 +668,12 @@ export default function AddProjectPage() {
     </div>
   )
 }
+
+
+
+
+
+
 
 
 

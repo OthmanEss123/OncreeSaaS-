@@ -42,12 +42,7 @@ api.interceptors.request.use(
     
     // Log pour debug (surtout pour MFA)
     if (config.url?.includes('mfa/verify')) {
-      console.log('🔍 Axios Request Interceptor - MFA Verify:', {
-        url: config.url,
-        method: config.method,
-        data: config.data,
-        headers: config.headers
-      })
+      
     }
     
     return config
@@ -62,22 +57,14 @@ api.interceptors.response.use(
   (response) => {
     // Log pour debug (surtout pour MFA)
     if (response.config.url?.includes('mfa/verify')) {
-      console.log('✅ Axios Response Interceptor - MFA Verify Success:', {
-        status: response.status,
-        data: response.data
-      })
+      
     }
     return response
   },
   (error) => {
     // Log pour debug (surtout pour MFA)
     if (error.config?.url?.includes('mfa/verify')) {
-      console.error('❌ Axios Response Interceptor - MFA Verify Error:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        requestData: error.config?.data
-      })
+      
     }
     
     // If 401, clear token and redirect to login
@@ -114,7 +101,6 @@ export const cachedGet = async <T>(url: string, ttl = CACHE_TTL): Promise<T> => 
   }
   
   // Sinon, faire l'appel API
-  console.log(`🌐 API CALL: ${url}`)
   try {
     const response = await api.get<T>(url)
     
@@ -478,6 +464,13 @@ export const WorkScheduleAPI = {
     })
     return response.data
   },
+  // Récupérer les signatures CRA avec les images
+  getCRASignatures: async (month: number, year: number, consultantId?: number) => {
+    const response = await api.get<{ success: boolean; signatures: Record<string, { signature_data: string; signed_at: string }> }>('/get-cra-signatures', {
+      params: { month, year, consultant_id: consultantId }
+    })
+    return response.data
+  },
   // Télécharger le PDF du CRA signé
   downloadSignedCRAPDF: async (consultantId: number, month: number, year: number) => {
     try {
@@ -676,5 +669,127 @@ export const DashboardAPI = {
     }>>('/admin/consultants-data', 5 * 60 * 1000) // Cache 5 minutes
     
     return response.data // Retourner directement les données
+  }
+}
+
+// ========================
+//  USER SIGNATURES (Générique)
+// ========================
+export const UserSignatureAPI = {
+  /**
+   * Enregistrer une signature d'utilisateur
+   * @param signatureData - Signature en base64
+   * @param options - Options pour la signature
+   */
+  save: async (signatureData: string, options?: {
+    documentType?: string; // Type de document (ex: 'CRA', 'CONTRACT', 'FORM', etc.)
+    documentId?: number; // ID du document associé
+    metadata?: Record<string, any>; // Métadonnées supplémentaires
+    consultantId?: number;
+    month?: number;
+    year?: number;
+  }) => {
+    const result = await api.post<ApiResponse<{
+      id: number;
+      signature_data: string;
+      signed_at: string;
+      user_id: number;
+      user_name: string;
+      user_email: string;
+      document_type?: string;
+      document_id?: number;
+    }>>('/user-signatures', {
+      signature_data: signatureData,
+      document_type: options?.documentType,
+      document_id: options?.documentId,
+      metadata: options?.metadata,
+      consultant_id: options?.consultantId,
+      month: options?.month,
+      year: options?.year
+    })
+    
+    invalidateCache('/user-signatures')
+    return result
+  },
+
+  /**
+   * Récupérer une signature par ID
+   */
+  get: (id: number) => cachedGet<{
+    id: number;
+    signature_data: string;
+    signed_at: string;
+    user_id: number;
+    user_type: string;
+    user_name: string;
+    user_email: string;
+    document_type?: string;
+    document_id?: number;
+  }>(`/user-signatures/${id}`, 5 * 60 * 1000),
+
+  /**
+   * Récupérer les signatures d'un utilisateur
+   */
+  getByUser: (userId?: number) => {
+    const params = userId ? `?user_id=${userId}` : ''
+    return cachedGet<Array<{
+      id: number;
+      signature_data: string;
+      signed_at: string;
+      user_id: number;
+      user_type: string;
+      user_name: string;
+      user_email: string;
+      document_type?: string;
+      document_id?: number;
+    }>>(`/user-signatures${params}`, 5 * 60 * 1000)
+  },
+
+  /**
+   * Récupérer les signatures par type de document
+   */
+  getByDocumentType: (documentType: string, documentId?: number) => {
+    let url = `/user-signatures?document_type=${documentType}`
+    if (documentId) {
+      url += `&document_id=${documentId}`
+    }
+    return cachedGet<Array<{
+      id: number;
+      signature_data: string;
+      signed_at: string;
+      user_id: number;
+      user_type: string;
+      user_name: string;
+      user_email: string;
+      document_type?: string;
+      document_id?: number;
+    }>>(url, 5 * 60 * 1000)
+  },
+
+  /**
+   * Récupérer les signatures pour un CRA spécifique
+   */
+  getByCRA: (consultantId: number, month: number, year: number) => {
+    return cachedGet<Array<{
+      id: number;
+      signature_data: string;
+      signed_at: string;
+      user_id: number;
+      user_type: string;
+      user_name: string;
+      user_email: string;
+      consultant_id: number;
+      month: number;
+      year: number;
+    }>>(`/user-signatures?consultant_id=${consultantId}&month=${month}&year=${year}`, 5 * 60 * 1000)
+  },
+
+  /**
+   * Supprimer une signature
+   */
+  delete: async (id: number) => {
+    const result = await api.delete(`/user-signatures/${id}`)
+    invalidateCache('/user-signatures')
+    return result
   }
 }

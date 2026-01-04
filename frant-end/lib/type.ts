@@ -80,10 +80,16 @@ export interface Project {
   description: string | null;
   start_date: string | null;
   end_date: string | null;
+  id_manager?: number | null;
+  id_comptable?: number | null;
+  id_rh?: number | null;
   created_at: string;
   updated_at: string;
   client?: Client;
   consultants?: Consultant[];
+  manager?: Manager;
+  comptable?: Comptable;
+  rh?: Rh;
 }
 
 export interface Assignment {

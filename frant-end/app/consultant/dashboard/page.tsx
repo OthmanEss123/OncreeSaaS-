@@ -28,7 +28,9 @@ import {
   CalendarDays,
   PenTool,
   CheckCircle,
-  Download
+  Download,
+  Eye,
+  Loader2
 } from 'lucide-react'
 
 // TypeScript Interfaces
@@ -113,6 +115,14 @@ export default function UserDashboard() {
     client?: { signed_at: string };
     manager?: { signed_at: string };
   }>>({})
+  const [showViewCRAModal, setShowViewCRAModal] = useState(false)
+  const [selectedCRALog, setSelectedCRALog] = useState<WorkLog | null>(null)
+  const [selectedCRASignatures, setSelectedCRASignatures] = useState<{
+    consultant?: { signature_data?: string; signed_at: string };
+    client?: { signature_data?: string; signed_at: string };
+    manager?: { signature_data?: string; signed_at: string };
+  } | null>(null)
+  const [loadingSignatures, setLoadingSignatures] = useState(false)
   
   // Référence pour éviter les appels API multiples
   const checkedPeriodsRef = useRef<string>('')
@@ -131,12 +141,10 @@ export default function UserDashboard() {
   // Transformer les workSchedules en workLogs groupés par mois
   const transformWorkSchedulesToWorkLogs = (schedules: WorkSchedule[]): WorkLog[] => {
     if (!schedules || schedules.length === 0) {
-      console.log('⚠️ Aucun schedule à transformer')
       return []
     }
     
-    console.log('🔄 Transformation de', schedules.length, 'workSchedules en workLogs')
-    console.log('📋 Premier schedule exemple:', schedules[0])
+    
     
     const grouped = schedules.reduce((acc, schedule) => {
       try {
@@ -271,7 +279,6 @@ export default function UserDashboard() {
       return b.month - a.month
     })
     
-    console.log('✅ Transformation terminée:', result.length, 'mois groupés')
     return result
   }
 
@@ -301,10 +308,7 @@ export default function UserDashboard() {
         
         // 🚀 1 SEUL APPEL au lieu de 3 appels séparés!
         const data = await DashboardAPI.consultantDashboard()
-        console.log('✅ Toutes les données chargées en 1 appel:', data)
-        console.log('👤 Consultant:', data.consultant)
-        console.log('📁 Projet:', data.project)
-        console.log('👥 Client du projet:', data.project?.client)
+       
         
         setConsultant(data.consultant)
         setProject(data.project)
@@ -313,26 +317,13 @@ export default function UserDashboard() {
         setWorkTypes(data.workTypes || [])
         setLeaveTypes(data.leaveTypes || [])
         
-        console.log('✅ Types chargés:', {
-          workTypes: (data.workTypes || []).length,
-          leaveTypes: (data.leaveTypes || []).length
-        })
-        
-        console.log('📊 WorkSchedules chargés:', {
-          nombre: schedules.length,
-          premier: schedules[0] || null,
-          tous: schedules
-        })
+       
         
         // Transformer les workSchedules en workLogs groupés par mois
         if (schedules.length > 0) {
-          console.log('📊 Transformation des workSchedules en workLogs:', schedules.length, 'entrées')
           const transformedLogs = transformWorkSchedulesToWorkLogs(schedules)
-          console.log('✅ WorkLogs transformés:', transformedLogs.length, 'mois')
-          console.log('📋 Détails des workLogs:', transformedLogs)
           setWorkLogs(transformedLogs)
         } else {
-          console.log('⚠️ Aucun workSchedule trouvé, tentative de chargement depuis /work-logs-grouped')
           // Essayer de charger depuis l'endpoint groupé
           loadWorkLogsFromBackend()
         }
@@ -494,7 +485,6 @@ export default function UserDashboard() {
   // Méthode normale pour charger les données du Journal de Travail depuis le backend
   const loadWorkLogsFromBackend = async () => {
     try {
-      console.log('📥 Chargement du Journal de Travail depuis le backend...')
       
       // Appel API direct sans cache complexe
       const token = localStorage.getItem('authToken')
@@ -514,10 +504,8 @@ export default function UserDashboard() {
       const result = await response.json()
       const groupedData = result.data
       
-      console.log('✅ Données reçues:', groupedData)
       
       if (!Array.isArray(groupedData) || groupedData.length === 0) {
-        console.log('⚠️ Aucune donnée trouvée')
         setWorkLogs([])
         return
       }
@@ -541,7 +529,6 @@ export default function UserDashboard() {
       }))
       
       setWorkLogs(workLogsData)
-      console.log('✅ Journal de Travail chargé:', workLogsData.length, 'mois')
       
     } catch (error) {
       console.error('❌ Erreur lors du chargement:', error)
@@ -648,11 +635,40 @@ export default function UserDashboard() {
     }
   };
 
+  const handleViewSignedCRA = async (log: WorkLog) => {
+    setSelectedCRALog(log)
+    setLoadingSignatures(true)
+    setShowViewCRAModal(true)
+    
+    try {
+      if (!consultant) {
+        throw new Error('Consultant non trouvé')
+      }
+      const result = await WorkScheduleAPI.getCRASignatures(log.month, log.year, consultant.id)
+      
+      if (result.success && result.signatures) {
+        setSelectedCRASignatures(result.signatures)
+      } else {
+        // Fallback aux signatures existantes si l'API échoue
+        const signatureKey = `${log.year}-${log.month}`
+        const signatures = signedCRAs[signatureKey] || null
+        setSelectedCRASignatures(signatures)
+      }
+    } catch (error) {
+      console.error('Erreur lors de la récupération des signatures:', error)
+      // Fallback aux signatures existantes
+      const signatureKey = `${log.year}-${log.month}`
+      const signatures = signedCRAs[signatureKey] || null
+      setSelectedCRASignatures(signatures)
+    } finally {
+      setLoadingSignatures(false)
+    }
+  }
+
   // Load data from backend on component mount (seulement si workSchedules est vide)
   useEffect(() => {
     // Si workSchedules est vide, essayer de charger depuis l'endpoint groupé
     if (workSchedules.length === 0 && consultant) {
-      console.log('📥 Chargement depuis /work-logs-grouped car workSchedules est vide')
       loadWorkLogsFromBackend()
     }
   }, [consultant])
@@ -1241,7 +1257,18 @@ export default function UserDashboard() {
                                 <span>Signer</span>
                               </motion.button>
                             )}
-                            
+                            {/* Bouton pour voir le CRA signé */}
+                            {consultantSigned && clientSigned && managerSigned && (
+                              <motion.button
+                                onClick={() => handleViewSignedCRA(log)}
+                                className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-1 text-sm font-medium" 
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                title="Voir le CRA signé">
+                                <Eye className="h-3 w-3" />
+                                <span>Voir CRA</span>
+                              </motion.button>
+                            )}
                             {/* Bouton Envoyer par email */}
                             <motion.button
                               onClick={() => handleSendReport(log)}
@@ -1495,6 +1522,217 @@ export default function UserDashboard() {
                 </motion.div>
               )}
             </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* View Signed CRA Modal */}
+      {showViewCRAModal && selectedCRALog && (
+        <div className="fixed inset-0 bg-gray-300 bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <motion.div 
+            className="bg-card rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center space-x-3">
+                <CheckCircle className="h-6 w-6 text-green-600" />
+                <h3 className="text-xl font-semibold text-card-foreground">
+                  CRA Signé - {new Date(selectedCRALog.year, selectedCRALog.month - 1, 1).toLocaleDateString('fr-FR', { 
+                    month: 'long', 
+                    year: 'numeric' 
+                  })}
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowViewCRAModal(false)
+                  setSelectedCRALog(null)
+                  setSelectedCRASignatures(null)
+                }}
+                className="p-2 hover:bg-muted rounded-lg transition-colors"
+                title="Fermer"
+              >
+                <X className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
+
+            {/* Informations du CRA */}
+            <div className="bg-muted rounded-lg p-4 mb-6">
+              <h4 className="text-lg font-semibold text-card-foreground mb-4">Détails du CRA</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Jours travaillés</p>
+                  <p className="text-lg font-semibold text-card-foreground">{selectedCRALog.daysWorked}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Week-end travaillés</p>
+                  <p className="text-lg font-semibold text-card-foreground">{selectedCRALog.weekendWork}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Jours d'absence</p>
+                  <p className="text-lg font-semibold text-card-foreground">{selectedCRALog.absences}</p>
+                </div>
+                {selectedCRALog.workType && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Type de travail</p>
+                    <p className="text-lg font-semibold text-card-foreground">{selectedCRALog.workType}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Signatures */}
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold text-card-foreground mb-4">Signatures</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Signature Consultant */}
+                <div className="border-2 border-blue-200 rounded-lg p-4 bg-blue-50">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <CheckCircle className="h-5 w-5 text-blue-600" />
+                    <h5 className="font-semibold text-card-foreground">Consultant</h5>
+                  </div>
+                  {loadingSignatures ? (
+                    <div className="bg-card rounded border border-blue-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                    </div>
+                  ) : selectedCRASignatures?.consultant ? (
+                    <div>
+                      <div className="bg-card rounded border border-blue-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                        {selectedCRASignatures.consultant.signature_data ? (
+                          <img 
+                            src={selectedCRASignatures.consultant.signature_data} 
+                            alt="Signature Consultant" 
+                            className="max-w-full max-h-[80px] object-contain"
+                          />
+                        ) : (
+                          <CheckCircle className="h-8 w-8 text-blue-600" />
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Signé le: <span className="font-medium text-card-foreground">
+                          {new Date(selectedCRASignatures.consultant.signed_at).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Non signé</p>
+                  )}
+                </div>
+
+                {/* Signature Client */}
+                <div className="border-2 border-green-200 rounded-lg p-4 bg-green-50">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <h5 className="font-semibold text-card-foreground">Client</h5>
+                  </div>
+                  {loadingSignatures ? (
+                    <div className="bg-card rounded border border-green-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-green-600" />
+                    </div>
+                  ) : selectedCRASignatures?.client ? (
+                    <div>
+                      <div className="bg-card rounded border border-green-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                        {selectedCRASignatures.client.signature_data ? (
+                          <img 
+                            src={selectedCRASignatures.client.signature_data} 
+                            alt="Signature Client" 
+                            className="max-w-full max-h-[80px] object-contain"
+                          />
+                        ) : (
+                          <CheckCircle className="h-8 w-8 text-green-600" />
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Signé le: <span className="font-medium text-card-foreground">
+                          {new Date(selectedCRASignatures.client.signed_at).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Non signé</p>
+                  )}
+                </div>
+
+                {/* Signature Manager */}
+                <div className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <CheckCircle className="h-5 w-5 text-red-600" />
+                    <h5 className="font-semibold text-card-foreground">Manager</h5>
+                  </div>
+                  {loadingSignatures ? (
+                    <div className="bg-card rounded border border-red-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-red-600" />
+                    </div>
+                  ) : selectedCRASignatures?.manager ? (
+                    <div>
+                      <div className="bg-card rounded border border-red-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                        {selectedCRASignatures.manager.signature_data ? (
+                          <img 
+                            src={selectedCRASignatures.manager.signature_data} 
+                            alt="Signature Manager" 
+                            className="max-w-full max-h-[80px] object-contain"
+                          />
+                        ) : (
+                          <CheckCircle className="h-8 w-8 text-red-600" />
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Signé le: <span className="font-medium text-card-foreground">
+                          {new Date(selectedCRASignatures.manager.signed_at).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Non signé</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end space-x-3 pt-4 border-t border-border">
+              <button
+                onClick={() => {
+                  setShowViewCRAModal(false)
+                  setSelectedCRALog(null)
+                  setSelectedCRASignatures(null)
+                }}
+                className="px-4 py-2 border border-border text-muted-foreground rounded-lg hover:bg-muted transition-colors"
+              >
+                Fermer
+              </button>
+              {selectedCRALog && (
+                <button
+                  onClick={() => {
+                    handleDownloadPDF(selectedCRALog)
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Télécharger PDF</span>
+                </button>
+              )}
+            </div>
           </motion.div>
         </div>
       )}

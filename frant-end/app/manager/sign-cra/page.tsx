@@ -15,7 +15,8 @@ import {
   Loader2,
   Briefcase,
   User,
-  RotateCcw
+  RotateCcw,
+  Upload
 } from 'lucide-react'
 
 interface WorkLog {
@@ -47,6 +48,7 @@ export default function SignCRAPage() {
   const [error, setError] = useState<string | null>(null)
   const [managerSignatureData, setManagerSignatureData] = useState<string | null>(null)
   const managerCanvasRef = useRef<HTMLCanvasElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDrawingManager, setIsDrawingManager] = useState(false)
 
   useEffect(() => {
@@ -354,6 +356,86 @@ export default function SignCRAPage() {
     if (!ctx) return
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     setManagerSignatureData(null)
+  }
+
+  // Fonction pour gérer l'upload d'une image de signature
+  const handleUploadSignature = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Vérifier que c'est une image
+    if (!file.type.startsWith('image/')) {
+      setError('Veuillez sélectionner un fichier image (PNG, JPG, etc.)')
+      return
+    }
+
+    // Vérifier la taille (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Le fichier est trop volumineux (max 5MB)')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const imageUrl = e.target?.result as string
+      
+      // Charger l'image et la dessiner sur le canvas
+      const img = new Image()
+      img.onload = () => {
+        const canvas = managerCanvasRef.current
+        if (!canvas) return
+
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+
+        // Effacer le canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        // Calculer les dimensions pour garder les proportions
+        const maxWidth = canvas.width
+        const maxHeight = canvas.height
+        let width = img.width
+        let height = img.height
+
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width
+          width = maxWidth
+        }
+        if (height > maxHeight) {
+          width = (width * maxHeight) / height
+          height = maxHeight
+        }
+
+        // Centrer l'image sur le canvas
+        const x = (canvas.width - width) / 2
+        const y = (canvas.height - height) / 2
+
+        // Dessiner l'image
+        ctx.drawImage(img, x, y, width, height)
+
+        // Sauvegarder la signature
+        const dataURL = canvas.toDataURL('image/png')
+        setManagerSignatureData(dataURL)
+        setError(null)
+      }
+
+      img.onerror = () => {
+        setError('Erreur lors du chargement de l\'image')
+      }
+
+      img.src = imageUrl
+    }
+
+    reader.onerror = () => {
+      setError('Erreur lors de la lecture du fichier')
+    }
+
+    reader.readAsDataURL(file)
+
+    // Réinitialiser l'input pour permettre de sélectionner le même fichier
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
   }
 
   const generateAndDownloadPDF = async () => {
@@ -718,7 +800,29 @@ export default function SignCRAPage() {
             <div className="mb-4">
               <p className="text-sm text-muted-foreground mb-3">
                 Veuillez signer dans la zone ci-dessous en utilisant votre souris ou votre doigt (sur écran tactile).
+                Vous pouvez également télécharger une image de votre signature.
               </p>
+              
+              {/* Input file caché */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleUploadSignature}
+                className="hidden"
+              />
+              
+              {/* Bouton pour uploader une signature */}
+              <div className="mb-3 flex justify-end">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  type="button"
+                  className="flex items-center space-x-2 px-4 py-2 text-sm bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors"
+                >
+                  <Upload className="h-4 w-4" />
+                  <span>Télécharger une signature</span>
+                </button>
+              </div>
               
               {/* Canvas de signature manager */}
               <div className="border-2 border-dashed border-border rounded-lg bg-white dark:bg-gray-800 p-4">

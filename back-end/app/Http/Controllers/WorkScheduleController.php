@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\WorkSchedule;
 use App\Models\CraSignature;
+use App\Models\UserSignature;
 use App\Models\Consultant;
 use App\Models\Client;
 use App\Models\Manager;
@@ -480,6 +481,15 @@ class WorkScheduleController extends Controller
 
             $craSignature->update($updateData);
 
+            // Enregistrer également dans la table user_signatures avec nom et email
+            $this->saveUserSignature($user, $signatureData, [
+                'document_type' => 'CRA',
+                'consultant_id' => $consultantId,
+                'month' => $month,
+                'year' => $year,
+                'request' => $request
+            ]);
+
             // Vérifier si toutes les signatures sont présentes pour envoyer le PDF
             $allSigned = $craSignature->consultant_signature_data 
                 && $craSignature->client_signature_data 
@@ -618,6 +628,85 @@ class WorkScheduleController extends Controller
         $pdf = Pdf::loadView('emails.signed-cra', $data);
         
         // Envoyer l'email
+        $clientEmail = $client->contact_email;
+        Mail::send('emails.signed-cra-email', $data, function ($message) use ($clientEmail, $consultant, $monthName, $pdf) {
+            $message->to($clientEmail)
+                ->subject("CRA Signé - {$consultant->name} - {$monthName}")
+                ->attachData($pdf->output(), "CRA_Signe_{$monthName}.pdf");
+        });
+    }
+
+    /**
+     * Enregistrer une signature dans la table user_signatures avec nom et email
+     */
+    private function saveUserSignature($user, $signatureData, $options = [])
+    {
+        try {
+            // Récupérer le nom et l'email selon le type d'utilisateur
+            $userName = $this->getUserNameForSignature($user);
+            $userEmail = $this->getUserEmailForSignature($user);
+
+            // Préparer les métadonnées
+            $metadata = [
+                'ip_address' => $options['request']->ip() ?? null,
+                'user_agent' => $options['request']->userAgent() ?? null,
+                'signed_at' => now()->toIso8601String()
+            ];
+
+            UserSignature::create([
+                'user_type' => get_class($user),
+                'user_id' => $user->id,
+                'user_name' => $userName,
+                'user_email' => $userEmail,
+                'signature_data' => $signatureData,
+                'signed_at' => now(),
+                'document_type' => $options['document_type'] ?? 'CRA',
+                'consultant_id' => $options['consultant_id'] ?? null,
+                'client_id' => $user instanceof Client ? $user->id : null,
+                'manager_id' => $user instanceof Manager ? $user->id : null,
+                'month' => $options['month'] ?? null,
+                'year' => $options['year'] ?? null,
+                'metadata' => $metadata
+            ]);
+        } catch (\Exception $e) {
+            // Logger l'erreur mais ne pas faire échouer la signature principale
+            Log::warning('Erreur lors de l\'enregistrement dans user_signatures: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Obtenir le nom de l'utilisateur pour la signature
+     */
+    private function getUserNameForSignature($user): string
+    {
+        if ($user instanceof Consultant) {
+            return trim($user->first_name . ' ' . $user->last_name);
+        } elseif ($user instanceof Client) {
+            return $user->contact_name ?? $user->company_name;
+        } elseif ($user instanceof Manager) {
+            return $user->name;
+        }
+        
+        return 'Inconnu';
+    }
+
+    /**
+     * Obtenir l'email de l'utilisateur pour la signature
+     */
+    private function getUserEmailForSignature($user): string
+    {
+        if ($user instanceof Consultant) {
+            return $user->email;
+        } elseif ($user instanceof Client) {
+            return $user->contact_email;
+        } elseif ($user instanceof Manager) {
+            return $user->email;
+        }
+        
+        return '';
+    }
+
+    /**
         $clientEmail = $client->contact_email;
         Mail::send('emails.signed-cra-email', $data, function ($message) use ($clientEmail, $consultant, $monthName, $pdf) {
             $message->to($clientEmail)
@@ -1047,6 +1136,79 @@ class WorkScheduleController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la vérification: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Récupérer les signatures CRA avec les images pour une période donnée
+     */
+    public function getCRASignatures(Request $request)
+    {
+        try {
+            $request->validate([
+                'month' => 'required|integer|min:1|max:12',
+                'year' => 'required|integer|min:2020|max:2030',
+                'consultant_id' => 'nullable|exists:consultants,id'
+            ]);
+
+            $user = $request->user();
+            $month = $request->month;
+            $year = $request->year;
+            $consultantId = $request->consultant_id ?? ($user instanceof Consultant ? $user->id : null);
+
+            if (!$consultantId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'consultant_id requis'
+                ], 422);
+            }
+
+            $craSignature = CraSignature::where('consultant_id', $consultantId)
+                ->where('month', $month)
+                ->where('year', $year)
+                ->first();
+
+            if (!$craSignature) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'CRA non trouvé pour cette période'
+                ], 404);
+            }
+
+            $signatures = [];
+            
+            if ($craSignature->consultant_signature_data) {
+                $signatures['consultant'] = [
+                    'signature_data' => $craSignature->consultant_signature_data,
+                    'signed_at' => $craSignature->consultant_signed_at?->toISOString()
+                ];
+            }
+            
+            if ($craSignature->client_signature_data) {
+                $signatures['client'] = [
+                    'signature_data' => $craSignature->client_signature_data,
+                    'signed_at' => $craSignature->client_signed_at?->toISOString()
+                ];
+            }
+            
+            if ($craSignature->manager_signature_data) {
+                $signatures['manager'] = [
+                    'signature_data' => $craSignature->manager_signature_data,
+                    'signed_at' => $craSignature->manager_signed_at?->toISOString()
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'signatures' => $signatures
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erreur lors de la récupération des signatures CRA: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la récupération: ' . $e->getMessage()
             ], 500);
         }
     }

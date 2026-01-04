@@ -12,6 +12,10 @@
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { border: 1px solid #ddd; padding: 8px; font-size: 10px; }
         th { background: #667eea; color: #fff; text-align: left; }
+        
+        table.days-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        table.days-table th, table.days-table td { border: 1px solid #ddd; padding: 4px 6px; font-size: 8px; }
+        table.days-table th { background: #667eea; color: #fff; text-align: left; }
 
         .day-worked { color: #27ae60; font-weight: bold; }
         .day-weekend-worked { color: #f39c12; font-weight: bold; }
@@ -50,69 +54,34 @@
     {{ $monthName }}
 </h2>
 
-<p><strong>Consultant :</strong> {{ $consultant->name }} ({{ $consultant->email }})</p>
-@if($project)
-<p><strong>Projet :</strong> {{ $project->name }}</p>
-@endif
-<p><strong>Date de génération :</strong> {{ now()->locale('fr')->isoFormat('D MMMM YYYY HH:mm') }}</p>
+<p><strong>Consultant :</strong> {{ $consultant->name }} ({{ $consultant->email }})</p>@if($project)<p><strong>Projet :</strong> {{ $project->name }}</p>@endif<p><strong>Date de génération :</strong> {{ now()->locale('fr')->isoFormat('D MMMM YYYY HH:mm') }}</p>
 
 @php
     /**
      * ===============================
-     * 1️⃣ EXTRAIRE LE MOIS RÉEL
-     * ===============================
-     */
-    $detectedMonth = null;
-    $detectedYear = null;
-
-    foreach ($schedules as $schedule) {
-        $selectedDays = is_array($schedule->selected_days)
-            ? $schedule->selected_days
-            : json_decode($schedule->selected_days, true);
-
-        if (!$selectedDays) continue;
-
-        $first = \Carbon\Carbon::parse($selectedDays[0]['date']);
-        $detectedMonth = $first->month;
-        $detectedYear = $first->year;
-        break;
-    }
-
-    // 🔒 Fallback si aucun jour trouvé
-    $month = $detectedMonth ?? $month;
-    $year = $detectedYear ?? $year;
-
-    /**
-     * ===============================
-     * 2️⃣ CONSTRUIRE LES JOURS
+     * CONSTRUIRE LES JOURS À PARTIR DES SCHEDULES
      * ===============================
      */
     $daysData = [];
 
     foreach ($schedules as $schedule) {
-        $selectedDays = is_array($schedule->selected_days)
-            ? $schedule->selected_days
-            : json_decode($schedule->selected_days, true);
+        if (!$schedule->date) continue;
 
-        if (!$selectedDays) continue;
+        $date = \Carbon\Carbon::parse($schedule->date);
+        $key = $date->format('Y-m-d');
 
-        foreach ($selectedDays as $selectedDay) {
-            if (!isset($selectedDay['date'], $selectedDay['period'])) continue;
+        if (!isset($daysData[$key])) {
+            $daysData[$key] = [
+                'date' => $date,
+                'morning' => null,
+                'evening' => null
+            ];
+        }
 
-            $date = \Carbon\Carbon::parse($selectedDay['date']);
-            if ($date->month != $month || $date->year != $year) continue;
-
-            $key = $date->format('Y-m-d');
-
-            if (!isset($daysData[$key])) {
-                $daysData[$key] = [
-                    'date' => $date,
-                    'morning' => null,
-                    'evening' => null
-                ];
-            }
-
-            $daysData[$key][$selectedDay['period']] = $schedule;
+        // Assigner le schedule à la période appropriée (morning ou evening)
+        $period = $schedule->period ?? 'morning';
+        if (in_array($period, ['morning', 'evening'])) {
+            $daysData[$key][$period] = $schedule;
         }
     }
 
@@ -122,7 +91,7 @@
 <!-- TABLE -->
 <h2>Détail des jours travaillés</h2>
 
-<table>
+<table class="days-table">
     <thead>
         <tr>
             <th>Date</th>
@@ -147,7 +116,8 @@
 
                 foreach (['morning','evening'] as $p) {
                     if ($day[$p]) {
-                        if ($day[$p]->absence_days > 0) {
+                        $schedule = $day[$p];
+                        if (($schedule->absence_days ?? 0) > 0) {
                             $absenceDays += 0.5;
                         } else {
                             $daysWorked += 0.5;
@@ -157,17 +127,17 @@
 
                 $weekendWork = ($isWeekend && $daysWorked > 0) ? $daysWorked : 0;
 
-                $workType = $day['morning']->workType->name
-                    ?? $day['evening']->workType->name
-                    ?? '-';
+                $workType = ($day['morning'] && $day['morning']->workType)
+                    ? $day['morning']->workType->name
+                    : (($day['evening'] && $day['evening']->workType)
+                        ? $day['evening']->workType->name
+                        : '-');
 
-                $leaveType = $day['morning']->leaveType->name
-                    ?? $day['evening']->leaveType->name
-                    ?? '-';
-
-                $note = $day['morning']->notes
-                    ?? $day['evening']->notes
-                    ?? '-';
+                $leaveType = ($day['morning'] && $day['morning']->leaveType)
+                    ? $day['morning']->leaveType->name
+                    : (($day['evening'] && $day['evening']->leaveType)
+                        ? $day['evening']->leaveType->name
+                        : '-');
             @endphp
 
             <tr class="{{ $isWeekend ? 'day-weekend' : '' }}">
@@ -182,7 +152,7 @@
             </tr>
         @empty
             <tr>
-                <td colspan="8" style="text-align:center; color:#e74c3c;">
+                <td colspan="7" style="text-align:center; color:#e74c3c;">
                     Aucun jour travaillé pour ce mois.
                 </td>
             </tr>
@@ -203,13 +173,7 @@
     @endif
 @endforeach
 
-<div class="footer">
-    <p>Ce document a été généré automatiquement et certifie l'exactitude du CRA.</p>
-    <p>Toutes les parties ont signé ce document.</p>
-    <p style="margin-top: 10px; padding: 8px; background: #e8f4f8; border: 1px solid #3498db; border-radius: 4px;">
-        <strong>💾 Télécharger ce PDF :</strong> Utilisez le bouton de téléchargement disponible dans l'application pour obtenir une copie de ce document.
-    </p>
-</div>
+
 
 </body>
 </html>

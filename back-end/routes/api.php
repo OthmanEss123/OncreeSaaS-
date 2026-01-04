@@ -20,6 +20,7 @@ use App\Http\Controllers\CongeController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EmailResetPasswordController;
 use App\Http\Controllers\MfaController;
+use App\Http\Controllers\UserSignatureController;
 
 /*
 |--------------------------------------------------------------------------
@@ -83,6 +84,7 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::get('/check-cra-signature', [WorkScheduleController::class, 'checkCRASignature']);
     Route::get('/check-cra-signature-status', [WorkScheduleController::class, 'checkCRASignatureStatus']); // Vérifier le statut détaillé des signatures
     Route::post('/check-cra-signatures', [WorkScheduleController::class, 'checkCRASignatures']); // Optimisé pour plusieurs signatures
+    Route::get('/get-cra-signatures', [WorkScheduleController::class, 'getCRASignatures']); // Récupérer les signatures avec images
     
     // Routes pour les contestations d'horaires
     Route::apiResource('schedule-contests', ScheduleContestController::class);
@@ -91,6 +93,14 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::get('/my-conges', [CongeController::class, 'myConges']); // Congés du consultant connecté
     Route::get('/rh/pending-conges', [CongeController::class, 'pendingConges']); // Congés en attente pour RH
     Route::apiResource('conges', CongeController::class);
+    
+    // Routes pour les signatures d'utilisateur (génériques)
+    Route::prefix('user-signatures')->group(function () {
+        Route::get('/', [UserSignatureController::class, 'index']);
+        Route::post('/', [UserSignatureController::class, 'store']);
+        Route::get('/{id}', [UserSignatureController::class, 'show']);
+        Route::delete('/{id}', [UserSignatureController::class, 'destroy']);
+    });
 });
 
 // Routes publiques (sans authentification) - APRÈS les routes protégées pour éviter les conflits

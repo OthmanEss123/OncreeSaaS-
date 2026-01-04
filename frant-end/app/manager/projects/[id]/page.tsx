@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
 import { useAuth } from '@/hooks/use-auth'
 import { ProjectAPI, invalidateCache } from '@/lib/api'
-import type { Project, Consultant } from '@/lib/type'
+import type { Project as ProjectType, Consultant } from '@/lib/type'
 import { 
   ArrowLeft, 
   Edit, 
@@ -17,7 +17,9 @@ import {
   Loader2,
   Users,
   Clock,
-  Building
+  Building,
+  UserCog,
+  Calculator
 } from 'lucide-react'
 
 export default function ProjectDetailsPage() {
@@ -29,6 +31,7 @@ export default function ProjectDetailsPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [project, setProject] = useState<Project | null>(null)
+  const [projectData, setProjectData] = useState<ProjectType | null>(null)
 
   // Redirection si pas authentifié
   useEffect(() => {
@@ -51,6 +54,7 @@ export default function ProjectDetailsPage() {
 
         const response = await ProjectAPI.get(projectId)
         setProject(response)
+        setProjectData(response)
       } catch (err: any) {
         console.error('Erreur lors du chargement du projet:', err)
         setError(err.response?.data?.message || err.message || 'Erreur lors du chargement des données')
@@ -345,6 +349,63 @@ export default function ProjectDetailsPage() {
                 </div>
               </motion.div>
             )}
+
+            {/* Manager, RH, Comptable Info */}
+            {(projectData?.rh || projectData?.comptable) && (
+              <motion.div 
+                className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.25 }}
+              >
+                <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                  <Users className="h-5 w-5 text-indigo-600 mr-2" />
+                  Équipe Projet
+                </h2>
+                
+                <div className="space-y-4">
+                  {projectData.rh && (
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center space-x-3 mb-3">
+                        <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                          <UserCog className="h-5 w-5 text-purple-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-medium text-gray-900">RH</h3>
+                          <p className="text-sm text-gray-600">{projectData.rh.name}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2 text-sm">
+                        <div className="text-gray-600">{projectData.rh.email}</div>
+                        {projectData.rh.phone && (
+                          <div className="text-gray-600">{projectData.rh.phone}</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {projectData.comptable && (
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center space-x-3 mb-3">
+                        <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                          <Calculator className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-medium text-gray-900">Comptable</h3>
+                          <p className="text-sm text-gray-600">{projectData.comptable.name}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2 text-sm">
+                        <div className="text-gray-600">{projectData.comptable.email}</div>
+                        {projectData.comptable.phone && (
+                          <div className="text-gray-600">{projectData.comptable.phone}</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
           </div>
 
           {/* Sidebar */}
@@ -459,6 +520,12 @@ export default function ProjectDetailsPage() {
     </div>
   )
 }
+
+
+
+
+
+
 
 
 
