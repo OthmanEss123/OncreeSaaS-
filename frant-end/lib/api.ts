@@ -96,7 +96,6 @@ export const cachedGet = async <T>(url: string, ttl = CACHE_TTL): Promise<T> => 
   
   // Si cache existe et pas expiré, retourner depuis cache
   if (cached && now - cached.timestamp < ttl) {
-    console.log(`✅ Cache HIT: ${url}`)
     return cached.data
   }
   
