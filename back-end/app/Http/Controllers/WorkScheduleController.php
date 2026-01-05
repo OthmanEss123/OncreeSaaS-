@@ -208,6 +208,18 @@ class WorkScheduleController extends Controller
                 $data['year'] = $data['year'] ?? $date->year;
             }
             
+            // Convertir les chaînes JSON en tableaux si nécessaire
+            // Laravel valide 'json' ce qui peut convertir en tableau, mais on s'assure que c'est bien un tableau
+            if (isset($data['selected_days']) && is_string($data['selected_days'])) {
+                $data['selected_days'] = json_decode($data['selected_days'], true);
+            }
+            if (isset($data['work_type_selected_days']) && is_string($data['work_type_selected_days'])) {
+                $data['work_type_selected_days'] = json_decode($data['work_type_selected_days'], true);
+            }
+            if (isset($data['leave_type_selected_days']) && is_string($data['leave_type_selected_days'])) {
+                $data['leave_type_selected_days'] = json_decode($data['leave_type_selected_days'], true);
+            }
+            
             // Créer ou mettre à jour le work schedule
             $workSchedule = WorkSchedule::updateOrCreate(
                 [
