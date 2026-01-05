@@ -156,61 +156,91 @@ class WorkScheduleController extends Controller
     }
 
     public function store(Request $request) {
-        $data = $request->validate([
-            'consultant_id' => 'sometimes|exists:consultants,id',
-            'date'          => 'required|date',
-            'period'        => 'nullable|in:morning,evening', // MODIFIÉ: nullable pour les entrées mensuelles
-            'notes'         => 'nullable|string',
-            'selected_days' => 'nullable|json', // NOUVEAU: liste des jours sélectionnés avec leurs périodes
-            'work_type_selected_days' => 'nullable|json', // NOUVEAU: jours sélectionnés pour types de travail
-            'leave_type_selected_days' => 'nullable|json', // NOUVEAU: jours sélectionnés pour congés
-            'days_worked'   => 'nullable|numeric|min:0|max:62', // 31 jours × 2 périodes max
-            'work_type_days' => 'nullable|numeric|min:0|max:62',
-            'weekend_worked' => 'nullable|numeric|min:0|max:31',
-            'absence_type'  => 'nullable|in:none,vacation,sick,personal,other',
-            'absence_days'  => 'nullable|numeric|min:0|max:7',
-            'month'         => 'nullable|integer|min:1|max:12',
-            'year'          => 'nullable|integer|min:2020|max:2030',
-            'work_type_id'  => 'nullable|exists:work_types,id',
-            'leave_type_id' => 'nullable|exists:leave_types,id',
-        ], [
-            'days_worked.max' => 'Le nombre de jours travaillés ne peut pas dépasser 62 (31 jours × 2 périodes maximum)',
-            'work_type_days.max' => 'Le nombre de jours de type de travail ne peut pas dépasser 62 (31 jours × 2 périodes maximum)',
-        ]);
-        
-        // Validation personnalisée pour les jours travaillés
-        if (isset($data['days_worked']) && $data['days_worked'] > 62) {
+        try {
+            $data = $request->validate([
+                'consultant_id' => 'sometimes|exists:consultants,id',
+                'date'          => 'required|date',
+                'period'        => 'nullable|in:morning,evening',
+                'notes'         => 'nullable|string',
+                'selected_days' => 'nullable|json',
+                'work_type_selected_days' => 'nullable|json',
+                'leave_type_selected_days' => 'nullable|json',
+                'days_worked'   => 'nullable|numeric|min:0|max:62',
+                'work_type_days' => 'nullable|numeric|min:0|max:62',
+                'weekend_worked' => 'nullable|numeric|min:0|max:31',
+                'absence_type'  => 'nullable|in:none,vacation,sick,personal,other',
+                'absence_days'  => 'nullable|numeric|min:0|max:7',
+                'month'         => 'nullable|integer|min:1|max:12',
+                'year'          => 'nullable|integer|min:2020|max:2030',
+                'work_type_id'  => 'nullable|exists:work_types,id',
+                'leave_type_id' => 'nullable|exists:leave_types,id',
+            ], [
+                'days_worked.max' => 'Le nombre de jours travaillés ne peut pas dépasser 62 (31 jours × 2 périodes maximum)',
+                'work_type_days.max' => 'Le nombre de jours de type de travail ne peut pas dépasser 62 (31 jours × 2 périodes maximum)',
+            ]);
+            
+            // Validation personnalisée
+            if (isset($data['days_worked']) && $data['days_worked'] > 62) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Le nombre de jours travaillés ne peut pas dépasser 62 (31 jours × 2 périodes maximum)',
+                    'errors' => ['days_worked' => ['Le nombre de jours travaillés ne peut pas dépasser 62 (31 jours × 2 périodes maximum)']]
+                ], 422);
+            }
+            
+            // Vérifier l'authentification
+            if (!isset($data['consultant_id']) && !$request->user()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Consultant ID requis ou utilisateur non authentifié'
+                ], 401);
+            }
+            
+            // Si consultant_id n'est pas fourni, utiliser l'ID du consultant connecté
+            if (!isset($data['consultant_id']) && $request->user()) {
+                $data['consultant_id'] = $request->user()->id;
+            }
+            
+            // Auto-remplir month et year si pas fournis
+            if (isset($data['date'])) {
+                $date = \Carbon\Carbon::parse($data['date']);
+                $data['month'] = $data['month'] ?? $date->month;
+                $data['year'] = $data['year'] ?? $date->year;
+            }
+            
+            // Créer ou mettre à jour le work schedule
+            $workSchedule = WorkSchedule::updateOrCreate(
+                [
+                    'consultant_id' => $data['consultant_id'],
+                    'date' => $data['date'],
+                    'period' => $data['period'] ?? null
+                ],
+                $data
+            );
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Work schedule enregistré avec succès',
+                'data' => $workSchedule->load('consultant')
+            ], 201);
+            
+        } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Le nombre de jours travaillés ne peut pas dépasser 62 (31 jours × 2 périodes maximum)',
-                'errors' => ['days_worked' => ['Le nombre de jours travaillés ne peut pas dépasser 62 (31 jours × 2 périodes maximum)']]
+                'message' => 'Erreur de validation',
+                'errors' => $e->errors()
             ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Erreur lors de l\'enregistrement du work schedule: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de l\'enregistrement: ' . $e->getMessage()
+            ], 500);
         }
-        
-        // Si consultant_id n'est pas fourni et que l'utilisateur est authentifié,
-        // utiliser l'ID du consultant connecté
-        if (!isset($data['consultant_id']) && $request->user()) {
-            $data['consultant_id'] = $request->user()->id;
-        }
-        
-        // Auto-remplir month et year si pas fournis
-        if (isset($data['date'])) {
-            $date = \Carbon\Carbon::parse($data['date']);
-            $data['month'] = $data['month'] ?? $date->month;
-            $data['year'] = $data['year'] ?? $date->year;
-        }
-        
-        // Utiliser updateOrCreate avec une logique adaptée
-        // Si period est fourni : utiliser consultant_id + date + period (entrées par période)
-        // Si period est null : utiliser consultant_id + date (entrées mensuelles)
-        return WorkSchedule::updateOrCreate(
-            [
-                'consultant_id' => $data['consultant_id'],
-                'date' => $data['date'],
-                'period' => $data['period'] ?? null
-            ],
-            $data
-        );
     }
 
     public function show(WorkSchedule $workSchedule) { return $workSchedule->load('consultant'); }
