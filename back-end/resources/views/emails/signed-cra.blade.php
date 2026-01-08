@@ -25,7 +25,7 @@
         .signature-box {
             border: 1px solid #ddd;
             padding: 10px;
-            width: 30%;
+            width: 27%;
             display: inline-block;
             vertical-align: top;
             margin-right: 2%;

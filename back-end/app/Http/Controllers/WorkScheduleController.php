@@ -220,18 +220,12 @@ class WorkScheduleController extends Controller
                 $data['leave_type_selected_days'] = json_decode($data['leave_type_selected_days'], true);
             }
             
-            // Pour les entrées mensuelles, définir 'morning' comme valeur par défaut pour period
-            // Cela évite les erreurs de contrainte NULL et est cohérent avec la migration
-            if (!isset($data['period']) || $data['period'] === null) {
-                $data['period'] = 'morning';
-            }
-            
             // Créer ou mettre à jour le work schedule
             $workSchedule = WorkSchedule::updateOrCreate(
                 [
                     'consultant_id' => $data['consultant_id'],
                     'date' => $data['date'],
-                    'period' => $data['period']
+                    'period' => $data['period'] ?? null
                 ],
                 $data
             );

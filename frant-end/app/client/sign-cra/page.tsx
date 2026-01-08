@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { WorkScheduleAPI, ConsultantAPI, UserSignatureAPI } from '@/lib/api'
@@ -53,6 +53,7 @@ export default function SignCRAPage() {
   const clientCanvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDrawingClient, setIsDrawingClient] = useState(false)
+  const [signatureToLoad, setSignatureToLoad] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -160,6 +161,60 @@ export default function SignCRAPage() {
         }
 
         setWorkLog(log)
+
+        // Vérifier si le client a déjà une signature enregistrée (pour n'importe quel CRA)
+        // La signature est liée à l'utilisateur, pas à un CRA spécifique
+        try {
+          // Récupérer toutes les signatures de type CRA pour trouver celle du client
+          const allClientSignaturesResponse = await UserSignatureAPI.getByDocumentType('CRA')
+          
+          // Gérer différentes structures de réponse
+          let allClientSignatures: any[] = []
+          if (Array.isArray(allClientSignaturesResponse)) {
+            allClientSignatures = allClientSignaturesResponse
+          } else if (allClientSignaturesResponse && typeof allClientSignaturesResponse === 'object') {
+            const apiResponse = allClientSignaturesResponse as any
+            if (apiResponse.success && Array.isArray(apiResponse.data)) {
+              allClientSignatures = apiResponse.data
+            } else if (Array.isArray(apiResponse)) {
+              allClientSignatures = apiResponse
+            } else if (apiResponse.data && Array.isArray(apiResponse.data)) {
+              allClientSignatures = apiResponse.data
+            }
+          }
+          
+          // Trouver la dernière signature du client (la plus récente)
+          // La signature est identifiée par user_type contenant 'Client'
+          const clientSignatures = allClientSignatures
+            .filter((sig: any) => {
+              const userType = typeof sig.user_type === 'string' ? sig.user_type : ''
+              return userType.includes('Client') || userType === 'App\\Models\\Client' || userType === 'App\Models\Client'
+            })
+            .sort((a: any, b: any) => {
+              // Trier par date de signature (plus récent en premier)
+              const dateA = new Date(a.signed_at || a.created_at || 0).getTime()
+              const dateB = new Date(b.signed_at || b.created_at || 0).getTime()
+              return dateB - dateA
+            })
+          
+          if (clientSignatures.length > 0 && clientSignatures[0].signature_data) {
+            // Le client a déjà une signature enregistrée, on va la charger automatiquement
+            setSignatureSaved(true)
+            console.log('Signature client trouvée - chargement automatique')
+            
+            // Stocker la signature pour le chargement automatique après initialisation du canvas
+            setSignatureToLoad(clientSignatures[0].signature_data)
+          } else {
+            // Aucune signature trouvée, on affiche le bouton "Enregistrer la signature"
+            setSignatureSaved(false)
+            console.log('Aucune signature client trouvée')
+          }
+        } catch (error) {
+          // Ignorer les erreurs de vérification de signature au chargement
+          console.log('Erreur lors de la vérification de la signature client:', error)
+          // Par défaut, on considère qu'il n'y a pas de signature
+          setSignatureSaved(false)
+        }
       } catch (error: any) {
         console.error('Erreur lors du chargement:', error)
         setError(error?.response?.data?.message || 'Erreur lors du chargement des données')
@@ -351,6 +406,94 @@ export default function SignCRAPage() {
     }
   }, [])
 
+  // Fonction pour charger une signature dans le canvas (utilisée pour le chargement automatique et l'import manuel)
+  const loadClientSignatureToCanvas = useCallback((signatureDataUrl: string, showAlert: boolean = false) => {
+    const canvas = clientCanvasRef.current
+    if (!canvas) {
+      // Si le canvas n'est pas encore initialisé, réessayer après un court délai
+      setTimeout(() => loadClientSignatureToCanvas(signatureDataUrl, showAlert), 200)
+      return
+    }
+
+    const img = new Image()
+    img.onload = () => {
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        console.error('Impossible d\'obtenir le contexte du canvas')
+        return
+      }
+
+      // S'assurer que le canvas est initialisé avec les bonnes dimensions
+      const rect = canvas.getBoundingClientRect()
+      const width = rect.width > 0 ? rect.width : 800
+      
+      if (canvas.width !== width) {
+        canvas.width = width
+        canvas.height = 200
+      }
+
+      // Réinitialiser le contexte après redimensionnement
+      ctx.strokeStyle = '#000000'
+      ctx.lineWidth = 3
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+
+      // Effacer le canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+      // Calculer les dimensions pour garder les proportions
+      const maxWidth = canvas.width
+      const maxHeight = canvas.height
+      let imgWidth = img.width
+      let imgHeight = img.height
+
+      if (imgWidth > maxWidth) {
+        imgHeight = (imgHeight * maxWidth) / imgWidth
+        imgWidth = maxWidth
+      }
+      if (imgHeight > maxHeight) {
+        imgWidth = (imgWidth * maxHeight) / imgHeight
+        imgHeight = maxHeight
+      }
+
+      // Centrer l'image sur le canvas
+      const x = (canvas.width - imgWidth) / 2
+      const y = (canvas.height - imgHeight) / 2
+
+      // Dessiner l'image
+      ctx.drawImage(img, x, y, imgWidth, imgHeight)
+
+      // Sauvegarder la signature
+      const dataURL = canvas.toDataURL('image/png')
+      setClientSignatureData(dataURL)
+      setError(null)
+      
+      if (showAlert) {
+        alert('Signature importée avec succès!')
+      }
+    }
+
+    img.onerror = () => {
+      console.error('Erreur lors du chargement de l\'image de la signature')
+      setError('Erreur lors du chargement de l\'image de la signature')
+    }
+
+    img.src = signatureDataUrl
+  }, [])
+
+  // Charger automatiquement la signature si elle existe
+  useEffect(() => {
+    if (signatureToLoad) {
+      // Attendre un peu pour s'assurer que le canvas est complètement initialisé
+      const timer = setTimeout(() => {
+        loadClientSignatureToCanvas(signatureToLoad, false)
+        setSignatureToLoad(null) // Réinitialiser après chargement
+      }, 500)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [signatureToLoad, loadClientSignatureToCanvas])
+
   const clearClientSignature = () => {
     const canvas = clientCanvasRef.current
     if (!canvas) return
@@ -471,7 +614,23 @@ export default function SignCRAPage() {
         }
       })
 
-      const response = result.data as any
+      // Gérer différentes structures de réponse
+      let response: any
+      if (result?.data) {
+        // Si result.data existe, vérifier sa structure
+        if (typeof result.data === 'object' && 'success' in result.data) {
+          response = result.data
+        } else if (typeof result.data === 'object' && 'data' in result.data) {
+          // Structure imbriquée
+          response = result.data
+        } else {
+          // La réponse est directement dans result.data
+          response = { success: true, data: result.data }
+        }
+      } else {
+        // Si pas de result.data, considérer comme succès si pas d'erreur
+        response = { success: true, data: result }
+      }
 
       if (!response.success) {
         setError(response.message || 'Erreur lors de l\'enregistrement de la signature')
@@ -482,10 +641,28 @@ export default function SignCRAPage() {
       setSignatureSaved(true)
       
       // Afficher un message de succès
-      alert('Signature enregistrée avec succès dans la base de données!')
+      console.log('Signature enregistrée avec succès:', response.data)
+      
+      // Afficher un message de succès (remplacer alert par un toast si disponible)
+      alert('Signature enregistrée avec succès ! Cette signature sera réutilisée pour tous vos CRA.')
     } catch (error: any) {
       console.error('Erreur lors de l\'enregistrement de la signature:', error)
-      const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors de l\'enregistrement de la signature'
+      
+      // Gérer différents types d'erreurs
+      let errorMessage = 'Erreur lors de l\'enregistrement de la signature'
+      
+      if (error?.response?.data) {
+        if (typeof error.response.data === 'string') {
+          errorMessage = error.response.data
+        } else if (error.response.data.message) {
+          errorMessage = error.response.data.message
+        } else if (error.response.data.error) {
+          errorMessage = error.response.data.error
+        }
+      } else if (error?.message) {
+        errorMessage = error.message
+      }
+      
       setError(errorMessage)
     } finally {
       setSavingSignature(false)
@@ -493,97 +670,47 @@ export default function SignCRAPage() {
   }
 
   // Fonction pour importer/charger la signature depuis user_signatures
+  // La signature est liée à l'utilisateur (client), pas à un CRA spécifique
   const handleImportSignature = async () => {
-    if (!consultant) {
-      setError('Consultant non trouvé')
-      return
-    }
-
-    const consultantId = consultantIdParam ? parseInt(consultantIdParam) : consultant.id
-
     try {
       setLoadingSignature(true)
       setError(null)
 
-      // Récupérer les signatures pour ce CRA
-      const response = await UserSignatureAPI.getByCRA(consultantId, month, year)
+      // Récupérer toutes les signatures de type CRA pour trouver celle du client
+      const allClientSignaturesResponse = await UserSignatureAPI.getByDocumentType('CRA')
       
-      // L'API backend retourne { success: true, data: [...] }
-      // cachedGet retourne response.data qui sera { success: true, data: [...] }
-      let signatures: any[] = []
-      if (Array.isArray(response)) {
-        signatures = response
-      } else if (response && typeof response === 'object') {
-        const apiResponse = response as any
+      let allClientSignatures: any[] = []
+      if (Array.isArray(allClientSignaturesResponse)) {
+        allClientSignatures = allClientSignaturesResponse
+      } else if (allClientSignaturesResponse && typeof allClientSignaturesResponse === 'object') {
+        const apiResponse = allClientSignaturesResponse as any
         if (apiResponse.success && Array.isArray(apiResponse.data)) {
-          signatures = apiResponse.data
+          allClientSignatures = apiResponse.data
         } else if (Array.isArray(apiResponse)) {
-          signatures = apiResponse
+          allClientSignatures = apiResponse
+        } else if (apiResponse.data && Array.isArray(apiResponse.data)) {
+          allClientSignatures = apiResponse.data
         }
       }
       
-      if (!signatures || signatures.length === 0) {
-        setError('Aucune signature enregistrée trouvée pour ce CRA')
-        return
-      }
-
-      // Trouver la signature du client (user_type contient 'Client')
-      const clientSignature = signatures.find((sig: any) => {
-        const userType = typeof sig.user_type === 'string' ? sig.user_type : ''
-        return userType.includes('Client') || userType === 'App\\Models\\Client'
-      })
-
-      if (!clientSignature || !clientSignature.signature_data) {
+      // Trouver la dernière signature du client (la plus récente)
+      const clientSignatures = allClientSignatures
+        .filter((sig: any) => {
+          const userType = typeof sig.user_type === 'string' ? sig.user_type : ''
+          return userType.includes('Client') || userType === 'App\\Models\\Client' || userType === 'App\Models\Client'
+        })
+        .sort((a: any, b: any) => {
+          const dateA = new Date(a.signed_at || a.created_at || 0).getTime()
+          const dateB = new Date(b.signed_at || b.created_at || 0).getTime()
+          return dateB - dateA
+        })
+      
+      if (clientSignatures.length > 0 && clientSignatures[0].signature_data) {
+        // Charger la signature sur le canvas
+        loadClientSignatureToCanvas(clientSignatures[0].signature_data, true)
+      } else {
         setError('Aucune signature client trouvée')
-        return
       }
-
-      // Charger la signature sur le canvas
-      const img = new Image()
-      img.onload = () => {
-        const canvas = clientCanvasRef.current
-        if (!canvas) return
-
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return
-
-        // Effacer le canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-        // Calculer les dimensions pour garder les proportions
-        const maxWidth = canvas.width
-        const maxHeight = canvas.height
-        let width = img.width
-        let height = img.height
-
-        if (width > maxWidth) {
-          height = (height * maxWidth) / width
-          width = maxWidth
-        }
-        if (height > maxHeight) {
-          width = (width * maxHeight) / height
-          height = maxHeight
-        }
-
-        // Centrer l'image sur le canvas
-        const x = (canvas.width - width) / 2
-        const y = (canvas.height - height) / 2
-
-        // Dessiner l'image
-        ctx.drawImage(img, x, y, width, height)
-
-        // Sauvegarder la signature
-        const dataURL = canvas.toDataURL('image/png')
-        setClientSignatureData(dataURL)
-        setError(null)
-        alert('Signature importée avec succès!')
-      }
-
-      img.onerror = () => {
-        setError('Erreur lors du chargement de l\'image de la signature')
-      }
-
-      img.src = clientSignature.signature_data
     } catch (error: any) {
       console.error('Erreur lors de l\'importation de la signature:', error)
       const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors de l\'importation de la signature'
@@ -1012,7 +1139,7 @@ export default function SignCRAPage() {
                     ) : (
                       <>
                         <CheckCircle className="h-4 w-4" />
-                        <span>Enregistrer la signature</span>
+                        <span>Enregistrerla signature</span>
                       </>
                     )}
                   </button>

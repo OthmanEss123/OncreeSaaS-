@@ -58,19 +58,7 @@ class AuthController extends Controller
             return response()->json(['message' => 'Identifiants invalides'], 401);
         }
 
-        // MFA n'est pas requis pour les admins - connexion directe
-        if ($userType === 'admin') {
-            $token = $user->createToken($userType . '-token')->plainTextToken;
-
-            return response()->json([
-                'token' => $token,
-                'type'  => $userType,
-                'user'  => $user,
-                'mfa_required' => false,
-            ]);
-        }
-
-        // Pour tous les autres types d'utilisateurs, MFA est obligatoire
+        // MFA est maintenant obligatoire pour tous les types d'utilisateurs, y compris les admins
         // Vérifier le statut MFA
         $setting = $user->twoFactorSetting()->first();
         
@@ -96,7 +84,7 @@ class AuthController extends Controller
             ]);
         }
 
-        // MFA est maintenant toujours activé pour les non-admins - générer le code
+        // MFA est maintenant toujours activé pour tous les utilisateurs (y compris les admins) - générer le code
 
         $code = (string) random_int(100000, 999999);
         $ttlMinutes = 5;

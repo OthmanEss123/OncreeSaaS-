@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { WorkScheduleAPI, ConsultantAPI } from '@/lib/api'
+import { WorkScheduleAPI, ConsultantAPI, UserSignatureAPI } from '@/lib/api'
 import type { Consultant, Project as ProjectType, WorkSchedule } from '@/lib/type'
 import jsPDF from 'jspdf'
 import { 
@@ -45,11 +45,15 @@ export default function SignCRAPage() {
   const [workLog, setWorkLog] = useState<WorkLog | null>(null)
   const [loading, setLoading] = useState(true)
   const [signing, setSigning] = useState(false)
+  const [savingSignature, setSavingSignature] = useState(false)
+  const [signatureSaved, setSignatureSaved] = useState(false)
+  const [loadingSignature, setLoadingSignature] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [managerSignatureData, setManagerSignatureData] = useState<string | null>(null)
   const managerCanvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDrawingManager, setIsDrawingManager] = useState(false)
+  const [signatureToLoad, setSignatureToLoad] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -157,6 +161,60 @@ export default function SignCRAPage() {
         }
 
         setWorkLog(log)
+
+        // Vérifier si le manager a déjà une signature enregistrée (pour n'importe quel CRA)
+        // La signature est liée à l'utilisateur (manager), pas à un CRA spécifique
+        try {
+          // Récupérer toutes les signatures de type CRA pour trouver celle du manager
+          const allManagerSignaturesResponse = await UserSignatureAPI.getByDocumentType('CRA')
+          
+          // Gérer différentes structures de réponse
+          let allManagerSignatures: any[] = []
+          if (Array.isArray(allManagerSignaturesResponse)) {
+            allManagerSignatures = allManagerSignaturesResponse
+          } else if (allManagerSignaturesResponse && typeof allManagerSignaturesResponse === 'object') {
+            const apiResponse = allManagerSignaturesResponse as any
+            if (apiResponse.success && Array.isArray(apiResponse.data)) {
+              allManagerSignatures = apiResponse.data
+            } else if (Array.isArray(apiResponse)) {
+              allManagerSignatures = apiResponse
+            } else if (apiResponse.data && Array.isArray(apiResponse.data)) {
+              allManagerSignatures = apiResponse.data
+            }
+          }
+          
+          // Trouver la dernière signature du manager (la plus récente)
+          // La signature est identifiée par user_type contenant 'Manager'
+          const managerSignatures = allManagerSignatures
+            .filter((sig: any) => {
+              const userType = typeof sig.user_type === 'string' ? sig.user_type : ''
+              return userType.includes('Manager') || userType === 'App\\Models\\Manager' || userType === 'App\Models\Manager'
+            })
+            .sort((a: any, b: any) => {
+              // Trier par date de signature (plus récent en premier)
+              const dateA = new Date(a.signed_at || a.created_at || 0).getTime()
+              const dateB = new Date(b.signed_at || b.created_at || 0).getTime()
+              return dateB - dateA
+            })
+          
+          if (managerSignatures.length > 0 && managerSignatures[0].signature_data) {
+            // Le manager a déjà une signature enregistrée, on va la charger automatiquement
+            setSignatureSaved(true)
+            console.log('Signature manager trouvée - chargement automatique')
+            
+            // Stocker la signature pour le chargement automatique après initialisation du canvas
+            setSignatureToLoad(managerSignatures[0].signature_data)
+          } else {
+            // Aucune signature trouvée, on affiche le bouton "Enregistrer la signature"
+            setSignatureSaved(false)
+            console.log('Aucune signature manager trouvée')
+          }
+        } catch (error) {
+          // Ignorer les erreurs de vérification de signature au chargement
+          console.log('Erreur lors de la vérification de la signature manager:', error)
+          // Par défaut, on considère qu'il n'y a pas de signature
+          setSignatureSaved(false)
+        }
       } catch (error: any) {
         console.error('Erreur lors du chargement:', error)
         setError(error?.response?.data?.message || 'Erreur lors du chargement des données')
@@ -348,6 +406,93 @@ export default function SignCRAPage() {
     }
   }, [])
 
+  // Fonction pour charger une signature dans le canvas (utilisée pour le chargement automatique et l'import manuel)
+  const loadManagerSignatureToCanvas = useCallback((signatureDataUrl: string, showAlert: boolean = false) => {
+    const canvas = managerCanvasRef.current
+    if (!canvas) {
+      // Si le canvas n'est pas encore initialisé, réessayer après un court délai
+      setTimeout(() => loadManagerSignatureToCanvas(signatureDataUrl, showAlert), 200)
+      return
+    }
+
+    const img = new Image()
+    img.onload = () => {
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        console.error('Impossible d\'obtenir le contexte du canvas')
+        return
+      }
+
+      // S'assurer que le canvas est initialisé avec les bonnes dimensions
+      const rect = canvas.getBoundingClientRect()
+      const width = rect.width > 0 ? rect.width : 800
+      
+      if (canvas.width !== width) {
+        canvas.width = width
+        canvas.height = 200
+      }
+
+      // Réinitialiser le contexte après redimensionnement
+      ctx.strokeStyle = '#000000'
+      ctx.lineWidth = 3
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+
+      // Effacer le canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+      // Calculer les dimensions pour garder les proportions
+      const maxWidth = canvas.width
+      const maxHeight = canvas.height
+      let imgWidth = img.width
+      let imgHeight = img.height
+
+      if (imgWidth > maxWidth) {
+        imgHeight = (imgHeight * maxWidth) / imgWidth
+        imgWidth = maxWidth
+      }
+      if (imgHeight > maxHeight) {
+        imgWidth = (imgWidth * maxHeight) / imgHeight
+        imgHeight = maxHeight
+      }
+
+      // Centrer l'image sur le canvas
+      const x = (canvas.width - imgWidth) / 2
+      const y = (canvas.height - imgHeight) / 2
+
+      // Dessiner l'image
+      ctx.drawImage(img, x, y, imgWidth, imgHeight)
+
+      // Sauvegarder la signature
+      const dataURL = canvas.toDataURL('image/png')
+      setManagerSignatureData(dataURL)
+      setError(null)
+      
+      if (showAlert) {
+        alert('Signature importée avec succès!')
+      }
+    }
+
+    img.onerror = () => {
+      console.error('Erreur lors du chargement de l\'image de la signature')
+      setError('Erreur lors du chargement de l\'image de la signature')
+    }
+
+    img.src = signatureDataUrl
+  }, [])
+
+  // Charger automatiquement la signature si elle existe
+  useEffect(() => {
+    if (signatureToLoad) {
+      // Attendre un peu pour s'assurer que le canvas est complètement initialisé
+      const timer = setTimeout(() => {
+        loadManagerSignatureToCanvas(signatureToLoad, false)
+        setSignatureToLoad(null) // Réinitialiser après chargement
+      }, 500)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [signatureToLoad, loadManagerSignatureToCanvas])
 
   const clearManagerSignature = () => {
     const canvas = managerCanvasRef.current
@@ -435,6 +580,134 @@ export default function SignCRAPage() {
     // Réinitialiser l'input pour permettre de sélectionner le même fichier
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
+    }
+  }
+
+  // Fonction pour enregistrer la signature dans user_signatures
+  const handleSaveSignature = async () => {
+    if (!managerSignatureData) {
+      setError('Veuillez d\'abord créer ou télécharger une signature')
+      return
+    }
+
+    if (!consultant) {
+      setError('Consultant non trouvé')
+      return
+    }
+
+    const consultantId = consultantIdParam ? parseInt(consultantIdParam) : consultant.id
+
+    try {
+      setSavingSignature(true)
+      setError(null)
+
+      // Enregistrer la signature dans user_signatures
+      const result = await UserSignatureAPI.save(managerSignatureData, {
+        documentType: 'CRA',
+        consultantId: consultantId,
+        month: month,
+        year: year,
+        metadata: {
+          action: 'manager_signature_saved',
+          consultant_name: consultant.name,
+          month_name: workLog?.monthName || `${month}/${year}`
+        }
+      })
+
+      // Gérer différentes structures de réponse
+      let response: any
+      if (result?.data) {
+        if (typeof result.data === 'object' && 'success' in result.data) {
+          response = result.data
+        } else if (typeof result.data === 'object' && 'data' in result.data) {
+          response = result.data
+        } else {
+          response = { success: true, data: result.data }
+        }
+      } else {
+        response = { success: true, data: result }
+      }
+
+      if (!response.success) {
+        setError(response.message || 'Erreur lors de l\'enregistrement de la signature')
+        return
+      }
+
+      // Marquer que la signature est enregistrée
+      setSignatureSaved(true)
+      
+      console.log('Signature enregistrée avec succès:', response.data)
+      alert('Signature enregistrée avec succès ! Cette signature sera réutilisée pour tous vos CRA.')
+    } catch (error: any) {
+      console.error('Erreur lors de l\'enregistrement de la signature:', error)
+      
+      let errorMessage = 'Erreur lors de l\'enregistrement de la signature'
+      
+      if (error?.response?.data) {
+        if (typeof error.response.data === 'string') {
+          errorMessage = error.response.data
+        } else if (error.response.data.message) {
+          errorMessage = error.response.data.message
+        } else if (error.response.data.error) {
+          errorMessage = error.response.data.error
+        }
+      } else if (error?.message) {
+        errorMessage = error.message
+      }
+      
+      setError(errorMessage)
+    } finally {
+      setSavingSignature(false)
+    }
+  }
+
+  // Fonction pour importer/charger la signature depuis user_signatures
+  const handleImportSignature = async () => {
+    try {
+      setLoadingSignature(true)
+      setError(null)
+
+      // Récupérer toutes les signatures de type CRA pour trouver celle du manager
+      const allManagerSignaturesResponse = await UserSignatureAPI.getByDocumentType('CRA')
+      
+      let allManagerSignatures: any[] = []
+      if (Array.isArray(allManagerSignaturesResponse)) {
+        allManagerSignatures = allManagerSignaturesResponse
+      } else if (allManagerSignaturesResponse && typeof allManagerSignaturesResponse === 'object') {
+        const apiResponse = allManagerSignaturesResponse as any
+        if (apiResponse.success && Array.isArray(apiResponse.data)) {
+          allManagerSignatures = apiResponse.data
+        } else if (Array.isArray(apiResponse)) {
+          allManagerSignatures = apiResponse
+        } else if (apiResponse.data && Array.isArray(apiResponse.data)) {
+          allManagerSignatures = apiResponse.data
+        }
+      }
+      
+      // Trouver la dernière signature du manager (la plus récente)
+      const managerSignatures = allManagerSignatures
+        .filter((sig: any) => {
+          const userType = typeof sig.user_type === 'string' ? sig.user_type : ''
+          return userType.includes('Manager') || userType === 'App\\Models\\Manager' || userType === 'App\Models\Manager'
+        })
+        .sort((a: any, b: any) => {
+          const dateA = new Date(a.signed_at || a.created_at || 0).getTime()
+          const dateB = new Date(b.signed_at || b.created_at || 0).getTime()
+          return dateB - dateA
+        })
+      
+      if (managerSignatures.length > 0 && managerSignatures[0].signature_data) {
+        // Charger la signature sur le canvas
+        loadManagerSignatureToCanvas(managerSignatures[0].signature_data, true)
+      } else {
+        setError('Aucune signature manager trouvée')
+      }
+    } catch (error: any) {
+      console.error('Erreur lors de l\'importation de la signature:', error)
+      const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors de l\'importation de la signature'
+      setError(errorMessage)
+    } finally {
+      setLoadingSignature(false)
     }
   }
 
@@ -812,16 +1085,47 @@ export default function SignCRAPage() {
                 className="hidden"
               />
               
-              {/* Bouton pour uploader une signature */}
-              <div className="mb-3 flex justify-end">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  type="button"
-                  className="flex items-center space-x-2 px-4 py-2 text-sm bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors"
-                >
-                  <Upload className="h-4 w-4" />
-                  <span>Télécharger une signature</span>
-                </button>
+              {/* Boutons pour uploader et enregistrer/importer la signature */}
+              <div className="mb-3 flex justify-end gap-3">
+                {signatureSaved ? (
+                  <button
+                    onClick={handleImportSignature}
+                    type="button"
+                    disabled={loadingSignature}
+                    className="flex items-center space-x-2 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loadingSignature ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Chargement...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4" />
+                        <span>Importer la signature</span>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSaveSignature}
+                    type="button"
+                    disabled={!managerSignatureData || savingSignature}
+                    className="flex items-center space-x-2 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingSignature ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Enregistrement...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-4 w-4" />
+                        <span>Enregistrer la signature</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
               
               {/* Canvas de signature manager */}
