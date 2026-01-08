@@ -70,89 +70,136 @@
         // Si selected_days existe, extraire tous les jours
         if ($schedule->selected_days) {
             try {
-                $selectedDaysData = is_string($schedule->selected_days) 
-                    ? json_decode($schedule->selected_days, true) 
-                    : $schedule->selected_days;
+                // Gérer différents formats : string JSON, array, ou déjà décodé par Laravel
+                $selectedDaysData = null;
                 
-                if (is_array($selectedDaysData)) {
+                if (is_string($schedule->selected_days)) {
+                    // Si c'est une string, essayer de la décoder
+                    $decoded = json_decode($schedule->selected_days, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        $selectedDaysData = $decoded;
+                    }
+                } elseif (is_array($schedule->selected_days)) {
+                    // Si c'est déjà un array (Laravel peut le caster automatiquement)
+                    $selectedDaysData = $schedule->selected_days;
+                }
+                
+                if (is_array($selectedDaysData) && !empty($selectedDaysData)) {
                     foreach ($selectedDaysData as $dayPeriod) {
-                        if (isset($dayPeriod['date']) && isset($dayPeriod['period'])) {
-                            $dayDate = \Carbon\Carbon::parse($dayPeriod['date']);
-                            // Vérifier que le jour appartient au mois/année sélectionné
-                            if ($dayDate->month == $month && $dayDate->year == $year) {
-                                $allSelectedDays[] = [
-                                    'date' => $dayPeriod['date'],
-                                    'period' => $dayPeriod['period'],
-                                    'schedule' => $schedule
-                                ];
+                        // Vérifier que dayPeriod est un array avec les clés nécessaires
+                        if (is_array($dayPeriod) && isset($dayPeriod['date']) && isset($dayPeriod['period'])) {
+                            try {
+                                $dayDate = \Carbon\Carbon::parse($dayPeriod['date']);
+                                // Vérifier que le jour appartient au mois/année sélectionné
+                                if ($dayDate->month == $month && $dayDate->year == $year) {
+                                    $allSelectedDays[] = [
+                                        'date' => $dayPeriod['date'],
+                                        'period' => $dayPeriod['period'],
+                                        'schedule' => $schedule
+                                    ];
+                                }
+                            } catch (\Exception $dateException) {
+                                // Ignorer les dates invalides et continuer
+                                continue;
                             }
                         }
                     }
                 }
             } catch (\Exception $e) {
-                // Ignorer les erreurs de parsing
+                // Ignorer les erreurs de parsing mais continuer avec les autres schedules
+                continue;
             }
         }
     }
+    
+    // Debug: compter les jours extraits (peut être commenté en production)
+    // $totalSelectedDaysExtracted = count($allSelectedDays);
 
     // D'abord, ajouter tous les jours de selected_days
     foreach ($allSelectedDays as $dayPeriod) {
-        $date = \Carbon\Carbon::parse($dayPeriod['date']);
-        $key = $date->format('Y-m-d');
-        
-        if (!isset($daysData[$key])) {
-            $daysData[$key] = [
-                'date' => $date,
-                'morning' => null,
-                'evening' => null
-            ];
-        }
-        
-        // Chercher le schedule correspondant dans TOUS les schedules
-        $matchingSchedule = null;
-        
-        if ($dayPeriod['schedule']) {
-            $sDate = \Carbon\Carbon::parse($dayPeriod['schedule']->date);
-            $sKey = $sDate->format('Y-m-d');
-            $sPeriod = $dayPeriod['schedule']->period ?? 'morning';
-            // Si le schedule correspond exactement à la date et période
-            if ($sKey === $key && $sPeriod === $dayPeriod['period']) {
-                $matchingSchedule = $dayPeriod['schedule'];
+        try {
+            $date = \Carbon\Carbon::parse($dayPeriod['date']);
+            $key = $date->format('Y-m-d');
+            
+            // Double vérification : s'assurer que le jour appartient bien au mois/année sélectionné
+            if ($date->month != $month || $date->year != $year) {
+                continue; // Ignorer les jours qui ne sont pas dans le mois sélectionné
             }
-        }
-        
-        // Sinon, chercher dans tous les schedules
-        if (!$matchingSchedule) {
-            foreach ($schedules as $s) {
-                if (!$s->date) continue;
-                $sDate = \Carbon\Carbon::parse($s->date);
-                $sKey = $sDate->format('Y-m-d');
-                $sPeriod = $s->period ?? 'morning';
-                if ($sKey === $key && $sPeriod === $dayPeriod['period']) {
-                    $matchingSchedule = $s;
-                    break;
+            
+            if (!isset($daysData[$key])) {
+                $daysData[$key] = [
+                    'date' => $date,
+                    'morning' => null,
+                    'evening' => null
+                ];
+            }
+            
+            // Chercher le schedule correspondant dans TOUS les schedules
+            $matchingSchedule = null;
+            
+            if ($dayPeriod['schedule']) {
+                try {
+                    $sDate = \Carbon\Carbon::parse($dayPeriod['schedule']->date);
+                    $sKey = $sDate->format('Y-m-d');
+                    $sPeriod = $dayPeriod['schedule']->period ?? 'morning';
+                    // Si le schedule correspond exactement à la date et période
+                    if ($sKey === $key && $sPeriod === $dayPeriod['period']) {
+                        $matchingSchedule = $dayPeriod['schedule'];
+                    }
+                } catch (\Exception $e) {
+                    // Ignorer les erreurs de parsing de date
                 }
             }
-        }
-        
-        // Utiliser le schedule trouvé ou créer un objet par défaut
-        $scheduleToUse = $matchingSchedule ?: (object)[
-            'date' => $dayPeriod['date'],
-            'period' => $dayPeriod['period'],
-            'days_worked' => 0.5,
-            'absence_days' => 0,
-            'workType' => $dayPeriod['schedule']->workType ?? null,
-            'leaveType' => $dayPeriod['schedule']->leaveType ?? null,
-            'work_type_id' => $dayPeriod['schedule']->work_type_id ?? null,
-            'leave_type_id' => $dayPeriod['schedule']->leave_type_id ?? null,
-            'weekend_worked' => 0,
-            'absence_type' => $dayPeriod['schedule']->absence_type ?? 'none'
-        ];
-        
-        if ($dayPeriod['period'] === 'morning') {
-            $daysData[$key]['morning'] = $scheduleToUse;
-        } else if ($dayPeriod['period'] === 'evening') {
-            $daysData[$key]['evening'] = $scheduleToUse;
+            
+            // Sinon, chercher dans tous les schedules
+            if (!$matchingSchedule) {
+                foreach ($schedules as $s) {
+                    if (!$s->date) continue;
+                    try {
+                        $sDate = \Carbon\Carbon::parse($s->date);
+                        $sKey = $sDate->format('Y-m-d');
+                        $sPeriod = $s->period ?? 'morning';
+                        if ($sKey === $key && $sPeriod === $dayPeriod['period']) {
+                            $matchingSchedule = $s;
+                            break;
+                        }
+                    } catch (\Exception $e) {
+                        continue;
+                    }
+                }
+            }
+            
+            // Utiliser le schedule trouvé ou créer un objet basé sur le schedule parent
+            if ($matchingSchedule) {
+                $scheduleToUse = $matchingSchedule;
+            } else {
+                // Créer un objet par défaut en utilisant les informations du schedule parent
+                $parentSchedule = $dayPeriod['schedule'];
+                
+                $scheduleToUse = (object)[
+                    'date' => $dayPeriod['date'],
+                    'period' => $dayPeriod['period'],
+                    'days_worked' => 0.5, // Par défaut, un jour sélectionné = 0.5 jour travaillé
+                    'absence_days' => 0,
+                    'workType' => $parentSchedule ? ($parentSchedule->workType ?? null) : null,
+                    'leaveType' => $parentSchedule ? ($parentSchedule->leaveType ?? null) : null,
+                    'work_type_id' => $parentSchedule ? ($parentSchedule->work_type_id ?? null) : null,
+                    'leave_type_id' => $parentSchedule ? ($parentSchedule->leave_type_id ?? null) : null,
+                    'weekend_worked' => 0,
+                    'absence_type' => $parentSchedule ? ($parentSchedule->absence_type ?? 'none') : 'none',
+                    'work_type_days' => 0
+                ];
+            }
+            
+            // Assigner le schedule à la période appropriée
+            if ($dayPeriod['period'] === 'morning') {
+                $daysData[$key]['morning'] = $scheduleToUse;
+            } else if ($dayPeriod['period'] === 'evening') {
+                $daysData[$key]['evening'] = $scheduleToUse;
+            }
+        } catch (\Exception $e) {
+            // Ignorer les erreurs pour ce jour et continuer avec les autres
+            continue;
         }
     }
 
@@ -187,6 +234,13 @@
     }
 
     ksort($daysData);
+    
+    // Debug: informations sur les jours extraits
+    // Pour déboguer, vous pouvez décommenter ces lignes et vérifier les logs
+    // \Log::info('Total schedules reçus: ' . count($schedules));
+    // \Log::info('Total jours extraits de selected_days: ' . count($allSelectedDays));
+    // \Log::info('Total jours dans daysData: ' . count($daysData));
+    // \Log::info('Jours extraits:', $allSelectedDays);
 @endphp
 
 <!-- TABLE -->
@@ -244,9 +298,27 @@
             <tr class="{{ $isWeekend ? 'day-weekend' : '' }}">
                 <td>{{ $date->format('d/m/Y') }}</td>
                 <td>{{ ucfirst($date->locale('fr')->dayName) }}</td>
-                <td class="day-worked">{{ $daysWorked ?: '-' }}</td>
-                <td class="day-weekend-worked">{{ $weekendWork ?: '-' }}</td>
-                <td class="day-absence">{{ $absenceDays ?: '-' }}</td>
+                <td class="day-worked">
+                    @if($daysWorked > 0)
+                        {{ $daysWorked == (int)$daysWorked ? (int)$daysWorked : number_format($daysWorked, 1, ',', '') }}
+                    @else
+                        -
+                    @endif
+                </td>
+                <td class="day-weekend-worked">
+                    @if($weekendWork > 0)
+                        {{ $weekendWork == (int)$weekendWork ? (int)$weekendWork : number_format($weekendWork, 1, ',', '') }}
+                    @else
+                        -
+                    @endif
+                </td>
+                <td class="day-absence">
+                    @if($absenceDays > 0)
+                        {{ $absenceDays == (int)$absenceDays ? (int)$absenceDays : number_format($absenceDays, 1, ',', '') }}
+                    @else
+                        -
+                    @endif
+                </td>
                 <td>{{ $workType }}</td>
                 <td>{{ $leaveType }}</td>
                

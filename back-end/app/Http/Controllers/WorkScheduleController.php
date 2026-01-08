@@ -616,8 +616,13 @@ class WorkScheduleController extends Controller
         
         // Récupérer tous les schedules du consultant pour l'année (pour extraire selected_days)
         // On filtre ensuite dans le template pour ne garder que ceux du mois
+        // Inclure aussi les schedules sans date car ils peuvent avoir des selected_days
         $allSchedules = WorkSchedule::where('consultant_id', $consultant->id)
-            ->whereYear('date', $craSignature->year)
+            ->where(function($query) use ($craSignature) {
+                $query->whereYear('date', $craSignature->year)
+                      ->orWhereNull('date')
+                      ->orWhere('year', $craSignature->year);
+            })
             ->with(['workType', 'leaveType'])
             ->orderBy('date', 'asc')
             ->get();
@@ -912,8 +917,13 @@ class WorkScheduleController extends Controller
             $endDate = $startDate->copy()->endOfMonth()->endOfDay();
             
             // Récupérer tous les schedules du consultant pour l'année (pour extraire selected_days)
+            // Inclure aussi les schedules sans date car ils peuvent avoir des selected_days
             $allSchedules = WorkSchedule::where('consultant_id', $consultant->id)
-                ->whereYear('date', $craSignature->year)
+                ->where(function($query) use ($craSignature) {
+                    $query->whereYear('date', $craSignature->year)
+                          ->orWhereNull('date')
+                          ->orWhere('year', $craSignature->year);
+                })
                 ->with(['workType', 'leaveType'])
                 ->orderBy('date', 'asc')
                 ->get();
