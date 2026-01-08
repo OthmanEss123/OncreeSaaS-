@@ -1623,10 +1623,10 @@ export default function UserDetailsPage() {
       )}
 
       {/* View Signed CRA Modal */}
-      {showViewCRAModal && selectedCRALog && (
+      {showViewCRAModal && selectedCRALog && user && (
         <div className="fixed inset-0 bg-gray-300 bg-opacity-50 flex items-center justify-center z-50 p-4">
           <motion.div 
-            className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-lg p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.2 }}
@@ -1654,68 +1654,194 @@ export default function UserDetailsPage() {
               </button>
             </div>
 
-            {/* Informations du CRA */}
-            <div className="bg-gray-50 rounded-lg p-4 mb-6">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4">Détails du CRA</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-sm text-gray-600">Jours travaillés</p>
-                  <p className="text-lg font-semibold text-gray-900">{selectedCRALog.daysWorked}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Week-end travaillés</p>
-                  <p className="text-lg font-semibold text-gray-900">{selectedCRALog.weekendWork}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Jours d'absence</p>
-                  <p className="text-lg font-semibold text-gray-900">{selectedCRALog.absences}</p>
-                </div>
-                {selectedCRALog.workType && (
-                  <div>
-                    <p className="text-sm text-gray-600">Type de travail</p>
-                    <p className="text-lg font-semibold text-gray-900">{selectedCRALog.workType}</p>
-                  </div>
-                )}
-              </div>
+            {/* En-tête comme dans le PDF */}
+            <div className="text-center mb-6 pb-4 border-b-2 border-blue-600">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                COMPTE RENDU D'ACTIVITÉ (CRA)
+              </h2>
+              <p className="text-lg text-gray-700">
+                {new Date(selectedCRALog.year, selectedCRALog.month - 1, 1).toLocaleDateString('fr-FR', { 
+                  month: 'long', 
+                  year: 'numeric' 
+                })}
+              </p>
             </div>
+
+            {/* Informations du consultant */}
+            <div className="mb-6 space-y-2 text-sm">
+              <p>
+                <strong>Consultant :</strong> {user.firstName} {user.lastName} ({user.email})
+              </p>
+              {projects && projects.length > 0 && projects[0] && (
+                <p>
+                  <strong>Projet :</strong> {projects[0].name}
+                </p>
+              )}
+              <p>
+                <strong>Date de génération :</strong> {new Date().toLocaleDateString('fr-FR', {
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </p>
+            </div>
+
+            {/* Tableau détaillé des jours travaillés */}
+            {(() => {
+              // Filtrer les schedules pour le mois/année sélectionné
+              const monthSchedules = workSchedules.filter(schedule => {
+                if (!schedule.date) return false
+                const scheduleDate = new Date(schedule.date)
+                return scheduleDate.getMonth() + 1 === selectedCRALog.month && 
+                       scheduleDate.getFullYear() === selectedCRALog.year
+              })
+
+              // Grouper par jour
+              const daysData: Record<string, { date: Date; morning?: any; evening?: any }> = {}
+              monthSchedules.forEach(schedule => {
+                if (!schedule.date) return
+                const date = new Date(schedule.date)
+                const key = date.toISOString().split('T')[0]
+                
+                if (!daysData[key]) {
+                  daysData[key] = { date }
+                }
+                
+                const period = (schedule as any).period || 'morning'
+                if (period === 'morning') {
+                  daysData[key].morning = schedule
+                } else if (period === 'evening') {
+                  daysData[key].evening = schedule
+                }
+              })
+
+              // Trier les jours
+              const sortedDays = Object.values(daysData).sort((a, b) => 
+                a.date.getTime() - b.date.getTime()
+              )
+
+              return (
+                <div className="mb-6">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-blue-600">
+                    Détail des jours travaillés
+                  </h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs border-collapse border border-gray-300">
+                      <thead>
+                        <tr className="bg-indigo-600 text-white">
+                          <th className="border border-gray-300 px-3 py-2 text-left">Date</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Jour</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Jours travaillés</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Week-end travaillé</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Absence</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Type de travail</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Type de congé</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedDays.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="border border-gray-300 px-3 py-4 text-center text-red-600">
+                              Aucun jour travaillé pour ce mois.
+                            </td>
+                          </tr>
+                        ) : (
+                          sortedDays.map((day, idx) => {
+                            const date = day.date
+                            const isWeekend = date.getDay() === 0 || date.getDay() === 6
+                            
+                            let daysWorked = 0
+                            let absenceDays = 0
+                            
+                            ;['morning', 'evening'].forEach(period => {
+                              const schedule = day[period as 'morning' | 'evening']
+                              if (schedule) {
+                                if ((schedule.absence_days ?? 0) > 0) {
+                                  absenceDays += 0.5
+                                } else {
+                                  daysWorked += 0.5
+                                }
+                              }
+                            })
+                            
+                            const weekendWork = (isWeekend && daysWorked > 0) ? daysWorked : 0
+                            
+                            const workType = (day.morning as any)?.workType?.name || 
+                                           (day.evening as any)?.workType?.name || '-'
+                            
+                            const leaveType = (day.morning as any)?.leaveType?.name || 
+                                            (day.evening as any)?.leaveType?.name || '-'
+
+                            return (
+                              <tr 
+                                key={idx} 
+                                className={isWeekend ? 'bg-yellow-50' : ''}
+                              >
+                                <td className="border border-gray-300 px-3 py-2">
+                                  {date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                </td>
+                                <td className="border border-gray-300 px-3 py-2">
+                                  {date.toLocaleDateString('fr-FR', { weekday: 'long' }).charAt(0).toUpperCase() + 
+                                   date.toLocaleDateString('fr-FR', { weekday: 'long' }).slice(1)}
+                                </td>
+                                <td className={`border border-gray-300 px-3 py-2 ${daysWorked > 0 ? 'text-green-700 font-semibold' : ''}`}>
+                                  {daysWorked || '-'}
+                                </td>
+                                <td className={`border border-gray-300 px-3 py-2 ${weekendWork > 0 ? 'text-orange-600 font-semibold' : ''}`}>
+                                  {weekendWork || '-'}
+                                </td>
+                                <td className={`border border-gray-300 px-3 py-2 ${absenceDays > 0 ? 'text-red-600 font-semibold' : ''}`}>
+                                  {absenceDays || '-'}
+                                </td>
+                                <td className="border border-gray-300 px-3 py-2">{workType}</td>
+                                <td className="border border-gray-300 px-3 py-2">{leaveType}</td>
+                              </tr>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Signatures */}
             <div className="mb-6">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4">Signatures</h4>
+              <h4 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-blue-600">
+                Signatures
+              </h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Signature Consultant */}
-                <div className="border-2 border-blue-200 rounded-lg p-4 bg-blue-50">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <CheckCircle className="h-5 w-5 text-blue-600" />
-                    <h5 className="font-semibold text-gray-900">Consultant</h5>
-                  </div>
+                <div className="border border-gray-300 rounded-lg p-4">
+                  <strong className="text-gray-900 block mb-3">Consultant</strong>
                   {loadingSignatures ? (
-                    <div className="bg-white rounded border border-blue-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                    <div className="bg-gray-50 rounded border border-gray-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
                       <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
                     </div>
                   ) : selectedCRASignatures?.consultant ? (
                     <div>
-                      <div className="bg-white rounded border border-blue-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <div className="bg-gray-50 rounded border border-gray-300 p-3 mb-2 min-h-[80px] flex items-center justify-center">
                         {selectedCRASignatures.consultant.signature_data ? (
                           <img 
                             src={selectedCRASignatures.consultant.signature_data} 
                             alt="Signature Consultant" 
-                            className="max-w-full max-h-[80px] object-contain"
+                            className="max-w-full max-h-[70px] object-contain"
                           />
                         ) : (
                           <CheckCircle className="h-8 w-8 text-blue-600" />
                         )}
                       </div>
                       <p className="text-xs text-gray-600">
-                        Signé le: <span className="font-medium text-gray-900">
-                          {new Date(selectedCRASignatures.consultant.signed_at).toLocaleDateString('fr-FR', {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </span>
+                        Signé le {new Date(selectedCRASignatures.consultant.signed_at).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
                       </p>
                     </div>
                   ) : (
@@ -1724,38 +1850,33 @@ export default function UserDetailsPage() {
                 </div>
 
                 {/* Signature Client */}
-                <div className="border-2 border-green-200 rounded-lg p-4 bg-green-50">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <CheckCircle className="h-5 w-5 text-green-600" />
-                    <h5 className="font-semibold text-gray-900">Client</h5>
-                  </div>
+                <div className="border border-gray-300 rounded-lg p-4">
+                  <strong className="text-gray-900 block mb-3">Client</strong>
                   {loadingSignatures ? (
-                    <div className="bg-white rounded border border-green-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                    <div className="bg-gray-50 rounded border border-gray-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
                       <Loader2 className="h-6 w-6 animate-spin text-green-600" />
                     </div>
                   ) : selectedCRASignatures?.client ? (
                     <div>
-                      <div className="bg-white rounded border border-green-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <div className="bg-gray-50 rounded border border-gray-300 p-3 mb-2 min-h-[80px] flex items-center justify-center">
                         {selectedCRASignatures.client.signature_data ? (
                           <img 
                             src={selectedCRASignatures.client.signature_data} 
                             alt="Signature Client" 
-                            className="max-w-full max-h-[80px] object-contain"
+                            className="max-w-full max-h-[70px] object-contain"
                           />
                         ) : (
                           <CheckCircle className="h-8 w-8 text-green-600" />
                         )}
                       </div>
                       <p className="text-xs text-gray-600">
-                        Signé le: <span className="font-medium text-gray-900">
-                          {new Date(selectedCRASignatures.client.signed_at).toLocaleDateString('fr-FR', {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </span>
+                        Signé le {new Date(selectedCRASignatures.client.signed_at).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
                       </p>
                     </div>
                   ) : (
@@ -1764,38 +1885,33 @@ export default function UserDetailsPage() {
                 </div>
 
                 {/* Signature Manager */}
-                <div className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <CheckCircle className="h-5 w-5 text-red-600" />
-                    <h5 className="font-semibold text-gray-900">Manager</h5>
-                  </div>
+                <div className="border border-gray-300 rounded-lg p-4">
+                  <strong className="text-gray-900 block mb-3">Manager</strong>
                   {loadingSignatures ? (
-                    <div className="bg-white rounded border border-red-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                    <div className="bg-gray-50 rounded border border-gray-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
                       <Loader2 className="h-6 w-6 animate-spin text-red-600" />
                     </div>
                   ) : selectedCRASignatures?.manager ? (
                     <div>
-                      <div className="bg-white rounded border border-red-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <div className="bg-gray-50 rounded border border-gray-300 p-3 mb-2 min-h-[80px] flex items-center justify-center">
                         {selectedCRASignatures.manager.signature_data ? (
                           <img 
                             src={selectedCRASignatures.manager.signature_data} 
                             alt="Signature Manager" 
-                            className="max-w-full max-h-[80px] object-contain"
+                            className="max-w-full max-h-[70px] object-contain"
                           />
                         ) : (
                           <CheckCircle className="h-8 w-8 text-red-600" />
                         )}
                       </div>
                       <p className="text-xs text-gray-600">
-                        Signé le: <span className="font-medium text-gray-900">
-                          {new Date(selectedCRASignatures.manager.signed_at).toLocaleDateString('fr-FR', {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </span>
+                        Signé le {new Date(selectedCRASignatures.manager.signed_at).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
                       </p>
                     </div>
                   ) : (

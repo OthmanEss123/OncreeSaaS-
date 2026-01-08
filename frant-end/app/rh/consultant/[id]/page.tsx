@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
-import { ConsultantAPI, RhAPI, invalidateCache } from '@/lib/api'
+import { ConsultantAPI, RhAPI, WorkScheduleAPI, invalidateCache } from '@/lib/api'
 import type { Consultant, Rh, WorkSchedule } from '@/lib/type'
 import { 
   ArrowLeft, 
@@ -21,7 +21,10 @@ import {
   CheckCircle,
   XCircle,
   Code,
-  RefreshCw
+  RefreshCw,
+  Download,
+  Eye,
+  X
 } from 'lucide-react'
 
 export default function ConsultantDetailsPage() {
@@ -34,6 +37,29 @@ export default function ConsultantDetailsPage() {
   const [consultant, setConsultant] = useState<Consultant | null>(null)
   const [rh, setRh] = useState<Rh | null>(null)
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([])
+  const [signedCRAs, setSignedCRAs] = useState<Record<string, {
+    consultant?: { signed_at: string };
+    client?: { signed_at: string };
+    manager?: { signed_at: string };
+  }>>({})
+  const [showViewCRAModal, setShowViewCRAModal] = useState(false)
+  const [selectedCRALog, setSelectedCRALog] = useState<WorkLogEntry | null>(null)
+  const [selectedCRASignatures, setSelectedCRASignatures] = useState<{
+    consultant?: { signature_data?: string; signed_at: string };
+    client?: { signature_data?: string; signed_at: string };
+    manager?: { signature_data?: string; signed_at: string };
+  } | null>(null)
+  const [loadingSignatures, setLoadingSignatures] = useState(false)
+
+  interface WorkLog {
+    id: string
+    month: number
+    year: number
+    daysWorked: number
+    weekendWork: number
+    absences: number
+    workType: string
+  }
 
   // Interface for grouped work log entries
   interface WorkLogEntry {
@@ -116,74 +142,9 @@ export default function ConsultantDetailsPage() {
     }
   }, [params.id])
 
-  // Action handlers
-  const handleEditConsultant = () => {
-    if (consultant) {
-      router.push(`/rh/consultant/${consultant.id}/edit`)
-    }
-  }
-
-  const handleDeleteConsultant = async () => {
-    if (!consultant) return
-    
-    setIsDeleting(true)
-    try {
-      await ConsultantAPI.delete(consultant.id)
-      invalidateCache('/consultants')
-      setShowDeleteModal(false)
-      router.push('/rh/dashboard')
-    } catch (error: any) {
-      console.error('Error deleting consultant:', error)
-      setError(error.response?.data?.message || 'Erreur lors de la suppression')
-    } finally {
-      setIsDeleting(false)
-    }
-  }
-
-  // Show loading state
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Chargement des données...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Show error state
-  if (error || !consultant) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto px-4">
-          <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Erreur</h2>
-          <p className="text-gray-600 mb-6">{error || 'Consultant introuvable'}</p>
-          <button
-            onClick={() => router.back()}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Retour
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // Parse skills
-  let skillsArray: string[] = []
-  if (consultant.skills) {
-    try {
-      const parsed = JSON.parse(consultant.skills)
-      skillsArray = Array.isArray(parsed) ? parsed : [consultant.skills]
-    } catch {
-      skillsArray = consultant.skills.split(',').map(s => s.trim()).filter(s => s.length > 0)
-    }
-  }
-
-  // Group work schedules by month and year
-  const groupWorkSchedulesByMonth = (): WorkLogEntry[] => {
+  // Utiliser useMemo pour groupedWorkLogs pour éviter les recalculs inutiles
+  // Doit être appelé avant tous les useEffect pour respecter l'ordre des hooks
+  const groupedWorkLogs = useMemo(() => {
     if (!workSchedules || workSchedules.length === 0) {
       console.log('⚠️ Aucun workSchedule à grouper (RH)')
       return []
@@ -271,6 +232,72 @@ export default function ConsultantDetailsPage() {
     console.log('📋 Résultat (RH):', result)
     
     return result
+  }, [workSchedules])
+
+  // Action handlers
+  const handleEditConsultant = () => {
+    if (consultant) {
+      router.push(`/rh/consultant/${consultant.id}/edit`)
+    }
+  }
+
+  const handleDeleteConsultant = async () => {
+    if (!consultant) return
+    
+    setIsDeleting(true)
+    try {
+      await ConsultantAPI.delete(consultant.id)
+      invalidateCache('/consultants')
+      setShowDeleteModal(false)
+      router.push('/rh/dashboard')
+    } catch (error: any) {
+      console.error('Error deleting consultant:', error)
+      setError(error.response?.data?.message || 'Erreur lors de la suppression')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Chargement des données...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state
+  if (error || !consultant) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-4">
+          <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Erreur</h2>
+          <p className="text-gray-600 mb-6">{error || 'Consultant introuvable'}</p>
+          <button
+            onClick={() => router.back()}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Retour
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Parse skills
+  let skillsArray: string[] = []
+  if (consultant?.skills) {
+    try {
+      const parsed = JSON.parse(consultant.skills)
+      skillsArray = Array.isArray(parsed) ? parsed : [consultant.skills]
+    } catch {
+      skillsArray = consultant.skills.split(',').map(s => s.trim()).filter(s => s.length > 0)
+    }
   }
 
   // Refresh work schedules
@@ -308,7 +335,62 @@ export default function ConsultantDetailsPage() {
     }
   }
 
-  const groupedWorkLogs = groupWorkSchedulesByMonth()
+  const handleDownloadPDF = async (log: WorkLogEntry) => {
+    if (!consultant) {
+      alert('❌ Consultant non trouvé')
+      return
+    }
+
+    const signatureKey = `${log.year}-${log.month}`
+    const signatures = signedCRAs[signatureKey]
+    const consultantSigned = signatures?.consultant !== undefined
+    const clientSigned = signatures?.client !== undefined
+    const managerSigned = signatures?.manager !== undefined
+
+    if (!consultantSigned || !clientSigned || !managerSigned) {
+      alert('❌ Le CRA doit être signé par toutes les parties (consultant, client, manager) avant de pouvoir télécharger le PDF.')
+      return
+    }
+
+    try {
+      await WorkScheduleAPI.downloadSignedCRAPDF(consultant.id, log.month, log.year)
+    } catch (error: any) {
+      console.error('Erreur lors du téléchargement du PDF:', error)
+      const errorMessage = error?.response?.data?.message || error?.message || 'Erreur lors du téléchargement du PDF'
+      alert(`❌ ${errorMessage}`)
+    }
+  }
+
+  const handleViewSignedCRA = async (log: WorkLogEntry) => {
+    setSelectedCRALog(log)
+    setLoadingSignatures(true)
+    setShowViewCRAModal(true)
+    
+    try {
+      const consultantId = consultant?.id
+      if (!consultantId) {
+        throw new Error('Consultant ID not found')
+      }
+      const result = await WorkScheduleAPI.getCRASignatures(log.month, log.year, consultantId)
+      
+      if (result.success && result.signatures) {
+        setSelectedCRASignatures(result.signatures)
+      } else {
+        // Fallback aux signatures existantes si l'API échoue
+        const signatureKey = `${log.year}-${log.month}`
+        const signatures = signedCRAs[signatureKey] || null
+        setSelectedCRASignatures(signatures)
+      }
+    } catch (error) {
+      console.error('Erreur lors de la récupération des signatures:', error)
+      // Fallback aux signatures existantes
+      const signatureKey = `${log.year}-${log.month}`
+      const signatures = signedCRAs[signatureKey] || null
+      setSelectedCRASignatures(signatures)
+    } finally {
+      setLoadingSignatures(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -604,6 +686,9 @@ export default function ConsultantDetailsPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Jours de type de travail
                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -659,6 +744,57 @@ export default function ConsultantDetailsPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                           {log.workTypeDays > 0 ? `${log.workTypeDays} jour(s)` : '-'}
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          <div className="flex items-center space-x-2">
+                            {/* Bouton pour voir les détails - toujours visible */}
+                            <motion.button
+                              onClick={() => handleViewSignedCRA(log)}
+                              className="bg-gray-600 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors flex items-center space-x-1 text-sm font-medium" 
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              title="Voir les détails du CRA">
+                              <Eye className="h-3 w-3" />
+                              <span>Voir détails</span>
+                            </motion.button>
+                            
+                            {/* Boutons supplémentaires si toutes les signatures sont présentes */}
+                            {(() => {
+                              const month = log.month
+                              const year = log.year
+                              const signatureKey = month && year ? `${year}-${month}` : null
+                              const signatures = signatureKey ? signedCRAs[signatureKey] : null
+                              const consultantSigned = signatures?.consultant !== undefined
+                              const clientSigned = signatures?.client !== undefined
+                              const managerSigned = signatures?.manager !== undefined
+                              
+                              if (consultantSigned && clientSigned && managerSigned) {
+                                return (
+                                  <>
+                                    <motion.button
+                                      onClick={() => handleViewSignedCRA(log)}
+                                      className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-1 text-sm font-medium" 
+                                      whileHover={{ scale: 1.05 }}
+                                      whileTap={{ scale: 0.95 }}
+                                      title="Voir le CRA signé">
+                                      <Eye className="h-3 w-3" />
+                                      <span>Voir CRA</span>
+                                    </motion.button>
+                                    <motion.button
+                                      onClick={() => handleDownloadPDF(log)}
+                                      className="bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 text-sm font-medium"
+                                      whileHover={{ scale: 1.05 }}
+                                      whileTap={{ scale: 0.95 }}
+                                      title="Télécharger le PDF du CRA signé">
+                                      <Download className="h-4 w-4" />
+                                      <span>Télécharger PDF</span>
+                                    </motion.button>
+                                  </>
+                                )
+                              }
+                              return null
+                            })()}
+                          </div>
+                        </td>
                       </motion.tr>
                     ))
                   )}
@@ -668,6 +804,333 @@ export default function ConsultantDetailsPage() {
           </motion.div>
         </div>
       </main>
+
+      {/* View Signed CRA Modal */}
+      {showViewCRAModal && selectedCRALog && consultant && (
+        <div className="fixed inset-0 bg-gray-300 bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <motion.div 
+            className="bg-white rounded-lg p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center space-x-3">
+                <CheckCircle className="h-6 w-6 text-green-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  CRA Signé - {new Date(selectedCRALog.year, selectedCRALog.month - 1, 1).toLocaleDateString('fr-FR', { 
+                    month: 'long', 
+                    year: 'numeric' 
+                  })}
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowViewCRAModal(false)
+                  setSelectedCRALog(null)
+                  setSelectedCRASignatures(null)
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Fermer"
+              >
+                <X className="h-5 w-5 text-gray-600" />
+              </button>
+            </div>
+
+            {/* En-tête comme dans le PDF */}
+            <div className="text-center mb-6 pb-4 border-b-2 border-blue-600">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                COMPTE RENDU D'ACTIVITÉ (CRA)
+              </h2>
+              <p className="text-lg text-gray-700">
+                {new Date(selectedCRALog.year, selectedCRALog.month - 1, 1).toLocaleDateString('fr-FR', { 
+                  month: 'long', 
+                  year: 'numeric' 
+                })}
+              </p>
+            </div>
+
+            {/* Informations du consultant */}
+            <div className="mb-6 space-y-2 text-sm">
+              <p>
+                <strong>Consultant :</strong> {consultant.name || `${consultant.first_name} ${consultant.last_name}`} ({consultant.email})
+              </p>
+              {consultant.project && (
+                <p>
+                  <strong>Projet :</strong> {consultant.project.name}
+                </p>
+              )}
+              <p>
+                <strong>Date de génération :</strong> {new Date().toLocaleDateString('fr-FR', {
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </p>
+            </div>
+
+            {/* Tableau détaillé des jours travaillés */}
+            {(() => {
+              // Filtrer les schedules pour le mois/année sélectionné
+              const monthSchedules = workSchedules.filter(schedule => {
+                if (!schedule.date) return false
+                const scheduleDate = new Date(schedule.date)
+                return scheduleDate.getMonth() + 1 === selectedCRALog.month && 
+                       scheduleDate.getFullYear() === selectedCRALog.year
+              })
+
+              // Grouper par jour
+              const daysData: Record<string, { date: Date; morning?: any; evening?: any }> = {}
+              monthSchedules.forEach(schedule => {
+                if (!schedule.date) return
+                const date = new Date(schedule.date)
+                const key = date.toISOString().split('T')[0]
+                
+                if (!daysData[key]) {
+                  daysData[key] = { date }
+                }
+                
+                const period = (schedule as any).period || 'morning'
+                if (period === 'morning') {
+                  daysData[key].morning = schedule
+                } else if (period === 'evening') {
+                  daysData[key].evening = schedule
+                }
+              })
+
+              // Trier les jours
+              const sortedDays = Object.values(daysData).sort((a, b) => 
+                a.date.getTime() - b.date.getTime()
+              )
+
+              return (
+                <div className="mb-6">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-blue-600">
+                    Détail des jours travaillés
+                  </h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs border-collapse border border-gray-300">
+                      <thead>
+                        <tr className="bg-indigo-600 text-white">
+                          <th className="border border-gray-300 px-3 py-2 text-left">Date</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Jour</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Jours travaillés</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Week-end travaillé</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Absence</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Type de travail</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Type de congé</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedDays.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="border border-gray-300 px-3 py-4 text-center text-red-600">
+                              Aucun jour travaillé pour ce mois.
+                            </td>
+                          </tr>
+                        ) : (
+                          sortedDays.map((day, idx) => {
+                            const date = day.date
+                            const isWeekend = date.getDay() === 0 || date.getDay() === 6
+                            
+                            let daysWorked = 0
+                            let absenceDays = 0
+                            
+                            ;['morning', 'evening'].forEach(period => {
+                              const schedule = day[period as 'morning' | 'evening']
+                              if (schedule) {
+                                if ((schedule.absence_days ?? 0) > 0) {
+                                  absenceDays += 0.5
+                                } else {
+                                  daysWorked += 0.5
+                                }
+                              }
+                            })
+                            
+                            const weekendWork = (isWeekend && daysWorked > 0) ? daysWorked : 0
+                            
+                            const workType = (day.morning as any)?.workType?.name || 
+                                           (day.evening as any)?.workType?.name || '-'
+                            
+                            const leaveType = (day.morning as any)?.leaveType?.name || 
+                                            (day.evening as any)?.leaveType?.name || '-'
+
+                            return (
+                              <tr 
+                                key={idx} 
+                                className={isWeekend ? 'bg-yellow-50' : ''}
+                              >
+                                <td className="border border-gray-300 px-3 py-2">
+                                  {date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                </td>
+                                <td className="border border-gray-300 px-3 py-2">
+                                  {date.toLocaleDateString('fr-FR', { weekday: 'long' }).charAt(0).toUpperCase() + 
+                                   date.toLocaleDateString('fr-FR', { weekday: 'long' }).slice(1)}
+                                </td>
+                                <td className={`border border-gray-300 px-3 py-2 ${daysWorked > 0 ? 'text-green-700 font-semibold' : ''}`}>
+                                  {daysWorked || '-'}
+                                </td>
+                                <td className={`border border-gray-300 px-3 py-2 ${weekendWork > 0 ? 'text-orange-600 font-semibold' : ''}`}>
+                                  {weekendWork || '-'}
+                                </td>
+                                <td className={`border border-gray-300 px-3 py-2 ${absenceDays > 0 ? 'text-red-600 font-semibold' : ''}`}>
+                                  {absenceDays || '-'}
+                                </td>
+                                <td className="border border-gray-300 px-3 py-2">{workType}</td>
+                                <td className="border border-gray-300 px-3 py-2">{leaveType}</td>
+                              </tr>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Signatures */}
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-blue-600">
+                Signatures
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Signature Consultant */}
+                <div className="border border-gray-300 rounded-lg p-4">
+                  <strong className="text-gray-900 block mb-3">Consultant</strong>
+                  {loadingSignatures ? (
+                    <div className="bg-gray-50 rounded border border-gray-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                    </div>
+                  ) : selectedCRASignatures?.consultant ? (
+                    <div>
+                      <div className="bg-gray-50 rounded border border-gray-300 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                        {selectedCRASignatures.consultant.signature_data ? (
+                          <img 
+                            src={selectedCRASignatures.consultant.signature_data} 
+                            alt="Signature Consultant" 
+                            className="max-w-full max-h-[70px] object-contain"
+                          />
+                        ) : (
+                          <CheckCircle className="h-8 w-8 text-blue-600" />
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        Signé le {new Date(selectedCRASignatures.consultant.signed_at).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Non signé</p>
+                  )}
+                </div>
+
+                {/* Signature Client */}
+                <div className="border border-gray-300 rounded-lg p-4">
+                  <strong className="text-gray-900 block mb-3">Client</strong>
+                  {loadingSignatures ? (
+                    <div className="bg-gray-50 rounded border border-gray-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-green-600" />
+                    </div>
+                  ) : selectedCRASignatures?.client ? (
+                    <div>
+                      <div className="bg-gray-50 rounded border border-gray-300 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                        {selectedCRASignatures.client.signature_data ? (
+                          <img 
+                            src={selectedCRASignatures.client.signature_data} 
+                            alt="Signature Client" 
+                            className="max-w-full max-h-[70px] object-contain"
+                          />
+                        ) : (
+                          <CheckCircle className="h-8 w-8 text-green-600" />
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        Signé le {new Date(selectedCRASignatures.client.signed_at).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Non signé</p>
+                  )}
+                </div>
+
+                {/* Signature Manager */}
+                <div className="border border-gray-300 rounded-lg p-4">
+                  <strong className="text-gray-900 block mb-3">Manager</strong>
+                  {loadingSignatures ? (
+                    <div className="bg-gray-50 rounded border border-gray-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-red-600" />
+                    </div>
+                  ) : selectedCRASignatures?.manager ? (
+                    <div>
+                      <div className="bg-gray-50 rounded border border-gray-300 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                        {selectedCRASignatures.manager.signature_data ? (
+                          <img 
+                            src={selectedCRASignatures.manager.signature_data} 
+                            alt="Signature Manager" 
+                            className="max-w-full max-h-[70px] object-contain"
+                          />
+                        ) : (
+                          <CheckCircle className="h-8 w-8 text-red-600" />
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        Signé le {new Date(selectedCRASignatures.manager.signed_at).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Non signé</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end space-x-3 pt-4 border-t">
+              <button
+                onClick={() => {
+                  setShowViewCRAModal(false)
+                  setSelectedCRALog(null)
+                  setSelectedCRASignatures(null)
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Fermer
+              </button>
+              {selectedCRALog && (
+                <button
+                  onClick={() => {
+                    handleDownloadPDF(selectedCRALog)
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Télécharger PDF</span>
+                </button>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Delete Consultant Modal */}
       {showDeleteModal && (
