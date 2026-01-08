@@ -1583,6 +1583,213 @@ export default function UserDashboard() {
               </div>
             </div>
 
+            {/* Tableau détaillé des jours travaillés */}
+            {(() => {
+              // Extraire tous les jours de selected_days pour le mois sélectionné depuis TOUS les schedules
+              const allSelectedDays: Array<{ date: string; period: string; schedule?: any }> = []
+              
+              // Parcourir TOUS les schedules pour trouver ceux qui ont des selected_days du mois sélectionné
+              workSchedules.forEach(schedule => {
+                // Si selected_days existe, extraire tous les jours
+                if ((schedule as any).selected_days) {
+                  try {
+                    const selectedDaysData = typeof (schedule as any).selected_days === 'string'
+                      ? JSON.parse((schedule as any).selected_days)
+                      : (schedule as any).selected_days
+                    
+                    if (Array.isArray(selectedDaysData)) {
+                      selectedDaysData.forEach((dayPeriod: any) => {
+                        if (dayPeriod.date && dayPeriod.period) {
+                          const dayDate = new Date(dayPeriod.date)
+                          // Vérifier que le jour appartient au mois/année sélectionné
+                          if (dayDate.getMonth() + 1 === selectedCRALog.month && 
+                              dayDate.getFullYear() === selectedCRALog.year) {
+                            allSelectedDays.push({
+                              date: dayPeriod.date,
+                              period: dayPeriod.period,
+                              schedule: schedule
+                            })
+                          }
+                        }
+                      })
+                    }
+                  } catch (e) {
+                    console.error('Erreur parsing selected_days:', e)
+                  }
+                }
+              })
+
+              // Filtrer aussi les schedules directs pour le mois/année sélectionné
+              const monthSchedules = workSchedules.filter(schedule => {
+                if (!schedule.date) return false
+                const scheduleDate = new Date(schedule.date)
+                return scheduleDate.getMonth() + 1 === selectedCRALog.month && 
+                       scheduleDate.getFullYear() === selectedCRALog.year
+              })
+
+              // Grouper par jour (inclure les jours de selected_days ET les schedules directs)
+              const daysData: Record<string, { date: Date; morning?: any; evening?: any }> = {}
+              
+              // D'abord, ajouter tous les jours de selected_days
+              allSelectedDays.forEach(dayPeriod => {
+                const date = new Date(dayPeriod.date)
+                const key = date.toISOString().split('T')[0]
+                
+                if (!daysData[key]) {
+                  daysData[key] = { date }
+                }
+                
+                // Chercher le schedule correspondant dans TOUS les schedules
+                let matchingSchedule = null
+                
+                if (dayPeriod.schedule) {
+                  const sDate = new Date(dayPeriod.schedule.date)
+                  const sKey = sDate.toISOString().split('T')[0]
+                  const sPeriod = (dayPeriod.schedule as any).period || 'morning'
+                  if (sKey === key && sPeriod === dayPeriod.period) {
+                    matchingSchedule = dayPeriod.schedule
+                  }
+                }
+                
+                if (!matchingSchedule) {
+                  matchingSchedule = workSchedules.find(s => {
+                    if (!s.date) return false
+                    const sDate = new Date(s.date)
+                    const sKey = sDate.toISOString().split('T')[0]
+                    const sPeriod = (s as any).period || 'morning'
+                    return sKey === key && sPeriod === dayPeriod.period
+                  })
+                }
+                
+                const scheduleToUse = matchingSchedule || { 
+                  date: dayPeriod.date,
+                  period: dayPeriod.period,
+                  days_worked: 0.5,
+                  absence_days: 0,
+                  workType: dayPeriod.schedule?.workType || dayPeriod.schedule?.work_type,
+                  leaveType: dayPeriod.schedule?.leaveType || dayPeriod.schedule?.leave_type,
+                  work_type_id: dayPeriod.schedule?.work_type_id,
+                  leave_type_id: dayPeriod.schedule?.leave_type_id,
+                  weekend_worked: 0,
+                  absence_type: dayPeriod.schedule?.absence_type || 'none'
+                }
+                
+                if (dayPeriod.period === 'morning') {
+                  daysData[key].morning = scheduleToUse
+                } else if (dayPeriod.period === 'evening') {
+                  daysData[key].evening = scheduleToUse
+                }
+              })
+              
+              // Ensuite, ajouter les schedules directs qui ne sont pas déjà dans selected_days
+              monthSchedules.forEach(schedule => {
+                if (!schedule.date) return
+                const date = new Date(schedule.date)
+                const key = date.toISOString().split('T')[0]
+                
+                if (!daysData[key]) {
+                  daysData[key] = { date }
+                }
+                
+                const period = (schedule as any).period || 'morning'
+                if (period === 'morning' && !daysData[key].morning) {
+                  daysData[key].morning = schedule
+                } else if (period === 'evening' && !daysData[key].evening) {
+                  daysData[key].evening = schedule
+                }
+              })
+
+              // Trier les jours
+              const sortedDays = Object.values(daysData).sort((a, b) => 
+                a.date.getTime() - b.date.getTime()
+              )
+
+              return (
+                <div className="mb-6">
+                  <h4 className="text-lg font-semibold text-card-foreground mb-4 pb-2 border-b border-blue-600">
+                    Détail des jours travaillés
+                  </h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs border-collapse border border-gray-300">
+                      <thead>
+                        <tr className="bg-indigo-600 text-white">
+                          <th className="border border-gray-300 px-3 py-2 text-left">Date</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Jour</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Jours travaillés</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Week-end travaillé</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Absence</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Type de travail</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left">Type de congé</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedDays.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="border border-gray-300 px-3 py-4 text-center text-red-600">
+                              Aucun jour travaillé pour ce mois.
+                            </td>
+                          </tr>
+                        ) : (
+                          sortedDays.map((day, idx) => {
+                            const date = day.date
+                            const isWeekend = date.getDay() === 0 || date.getDay() === 6
+                            
+                            let daysWorked = 0
+                            let absenceDays = 0
+                            
+                            ;['morning', 'evening'].forEach(period => {
+                              const schedule = day[period as 'morning' | 'evening']
+                              if (schedule) {
+                                if ((schedule.absence_days ?? 0) > 0) {
+                                  absenceDays += 0.5
+                                } else {
+                                  daysWorked += 0.5
+                                }
+                              }
+                            })
+                            
+                            const weekendWork = (isWeekend && daysWorked > 0) ? daysWorked : 0
+                            
+                            const workType = (day.morning as any)?.workType?.name || 
+                                           (day.evening as any)?.workType?.name || '-'
+                            
+                            const leaveType = (day.morning as any)?.leaveType?.name || 
+                                            (day.evening as any)?.leaveType?.name || '-'
+
+                            return (
+                              <tr 
+                                key={idx} 
+                                className={isWeekend ? 'bg-yellow-50' : ''}
+                              >
+                                <td className="border border-gray-300 px-3 py-2">
+                                  {date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                </td>
+                                <td className="border border-gray-300 px-3 py-2">
+                                  {date.toLocaleDateString('fr-FR', { weekday: 'long' }).charAt(0).toUpperCase() + 
+                                   date.toLocaleDateString('fr-FR', { weekday: 'long' }).slice(1)}
+                                </td>
+                                <td className={`border border-gray-300 px-3 py-2 ${daysWorked > 0 ? 'text-green-700 font-semibold' : ''}`}>
+                                  {daysWorked || '-'}
+                                </td>
+                                <td className={`border border-gray-300 px-3 py-2 ${weekendWork > 0 ? 'text-orange-600 font-semibold' : ''}`}>
+                                  {weekendWork || '-'}
+                                </td>
+                                <td className={`border border-gray-300 px-3 py-2 ${absenceDays > 0 ? 'text-red-600 font-semibold' : ''}`}>
+                                  {absenceDays || '-'}
+                                </td>
+                                <td className="border border-gray-300 px-3 py-2">{workType}</td>
+                                <td className="border border-gray-300 px-3 py-2">{leaveType}</td>
+                              </tr>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })()}
+
             {/* Signatures */}
             <div className="mb-6">
               <h4 className="text-lg font-semibold text-card-foreground mb-4">Signatures</h4>

@@ -59,16 +59,114 @@
 @php
     /**
      * ===============================
-     * CONSTRUIRE LES JOURS À PARTIR DES SCHEDULES
+     * CONSTRUIRE LES JOURS À PARTIR DES SCHEDULES ET SELECTED_DAYS
      * ===============================
      */
     $daysData = [];
+    $allSelectedDays = [];
 
+    // Extraire tous les jours de selected_days pour le mois sélectionné depuis TOUS les schedules
+    foreach ($schedules as $schedule) {
+        // Si selected_days existe, extraire tous les jours
+        if ($schedule->selected_days) {
+            try {
+                $selectedDaysData = is_string($schedule->selected_days) 
+                    ? json_decode($schedule->selected_days, true) 
+                    : $schedule->selected_days;
+                
+                if (is_array($selectedDaysData)) {
+                    foreach ($selectedDaysData as $dayPeriod) {
+                        if (isset($dayPeriod['date']) && isset($dayPeriod['period'])) {
+                            $dayDate = \Carbon\Carbon::parse($dayPeriod['date']);
+                            // Vérifier que le jour appartient au mois/année sélectionné
+                            if ($dayDate->month == $month && $dayDate->year == $year) {
+                                $allSelectedDays[] = [
+                                    'date' => $dayPeriod['date'],
+                                    'period' => $dayPeriod['period'],
+                                    'schedule' => $schedule
+                                ];
+                            }
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                // Ignorer les erreurs de parsing
+            }
+        }
+    }
+
+    // D'abord, ajouter tous les jours de selected_days
+    foreach ($allSelectedDays as $dayPeriod) {
+        $date = \Carbon\Carbon::parse($dayPeriod['date']);
+        $key = $date->format('Y-m-d');
+        
+        if (!isset($daysData[$key])) {
+            $daysData[$key] = [
+                'date' => $date,
+                'morning' => null,
+                'evening' => null
+            ];
+        }
+        
+        // Chercher le schedule correspondant dans TOUS les schedules
+        $matchingSchedule = null;
+        
+        if ($dayPeriod['schedule']) {
+            $sDate = \Carbon\Carbon::parse($dayPeriod['schedule']->date);
+            $sKey = $sDate->format('Y-m-d');
+            $sPeriod = $dayPeriod['schedule']->period ?? 'morning';
+            // Si le schedule correspond exactement à la date et période
+            if ($sKey === $key && $sPeriod === $dayPeriod['period']) {
+                $matchingSchedule = $dayPeriod['schedule'];
+            }
+        }
+        
+        // Sinon, chercher dans tous les schedules
+        if (!$matchingSchedule) {
+            foreach ($schedules as $s) {
+                if (!$s->date) continue;
+                $sDate = \Carbon\Carbon::parse($s->date);
+                $sKey = $sDate->format('Y-m-d');
+                $sPeriod = $s->period ?? 'morning';
+                if ($sKey === $key && $sPeriod === $dayPeriod['period']) {
+                    $matchingSchedule = $s;
+                    break;
+                }
+            }
+        }
+        
+        // Utiliser le schedule trouvé ou créer un objet par défaut
+        $scheduleToUse = $matchingSchedule ?: (object)[
+            'date' => $dayPeriod['date'],
+            'period' => $dayPeriod['period'],
+            'days_worked' => 0.5,
+            'absence_days' => 0,
+            'workType' => $dayPeriod['schedule']->workType ?? null,
+            'leaveType' => $dayPeriod['schedule']->leaveType ?? null,
+            'work_type_id' => $dayPeriod['schedule']->work_type_id ?? null,
+            'leave_type_id' => $dayPeriod['schedule']->leave_type_id ?? null,
+            'weekend_worked' => 0,
+            'absence_type' => $dayPeriod['schedule']->absence_type ?? 'none'
+        ];
+        
+        if ($dayPeriod['period'] === 'morning') {
+            $daysData[$key]['morning'] = $scheduleToUse;
+        } else if ($dayPeriod['period'] === 'evening') {
+            $daysData[$key]['evening'] = $scheduleToUse;
+        }
+    }
+
+    // Ensuite, ajouter les schedules directs qui ne sont pas déjà dans selected_days
     foreach ($schedules as $schedule) {
         if (!$schedule->date) continue;
 
         $date = \Carbon\Carbon::parse($schedule->date);
         $key = $date->format('Y-m-d');
+
+        // Vérifier que le schedule appartient au mois/année sélectionné
+        if ($date->month != $month || $date->year != $year) {
+            continue;
+        }
 
         if (!isset($daysData[$key])) {
             $daysData[$key] = [
@@ -81,7 +179,10 @@
         // Assigner le schedule à la période appropriée (morning ou evening)
         $period = $schedule->period ?? 'morning';
         if (in_array($period, ['morning', 'evening'])) {
-            $daysData[$key][$period] = $schedule;
+            // Ne remplacer que si la période n'est pas déjà remplie
+            if (!$daysData[$key][$period]) {
+                $daysData[$key][$period] = $schedule;
+            }
         }
     }
 

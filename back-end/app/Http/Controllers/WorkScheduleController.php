@@ -601,11 +601,20 @@ class WorkScheduleController extends Controller
         $startDate = \Carbon\Carbon::create($craSignature->year, $craSignature->month, 1)->startOfDay();
         $endDate = $startDate->copy()->endOfMonth()->endOfDay();
         
-        $schedules = WorkSchedule::where('consultant_id', $consultant->id)
-            ->whereBetween('date', [$startDate, $endDate])
+        // Récupérer tous les schedules du consultant pour l'année (pour extraire selected_days)
+        // On filtre ensuite dans le template pour ne garder que ceux du mois
+        $allSchedules = WorkSchedule::where('consultant_id', $consultant->id)
+            ->whereYear('date', $craSignature->year)
             ->with(['workType', 'leaveType'])
             ->orderBy('date', 'asc')
             ->get();
+        
+        // Pour les calculs de totaux, utiliser seulement les schedules du mois
+        $schedules = $allSchedules->filter(function($schedule) use ($startDate, $endDate) {
+            if (!$schedule->date) return false;
+            $scheduleDate = \Carbon\Carbon::parse($schedule->date);
+            return $scheduleDate->between($startDate, $endDate);
+        });
 
         $monthName = \Carbon\Carbon::create($craSignature->year, $craSignature->month, 1)
             ->locale('fr')
@@ -635,7 +644,7 @@ class WorkScheduleController extends Controller
             'monthName' => $monthName,
             'month' => $craSignature->month,
             'year' => $craSignature->year,
-            'schedules' => $schedules,
+            'schedules' => $allSchedules, // Passer tous les schedules pour extraire selected_days
             'totalDaysWorked' => round($totalDaysWorked, 1),
             'totalWeekendWork' => round($totalWeekendWork, 1),
             'totalAbsences' => round($totalAbsences, 1),
@@ -889,11 +898,19 @@ class WorkScheduleController extends Controller
             $startDate = \Carbon\Carbon::create($craSignature->year, $craSignature->month, 1)->startOfDay();
             $endDate = $startDate->copy()->endOfMonth()->endOfDay();
             
-            $schedules = WorkSchedule::where('consultant_id', $consultant->id)
-                ->whereBetween('date', [$startDate, $endDate])
+            // Récupérer tous les schedules du consultant pour l'année (pour extraire selected_days)
+            $allSchedules = WorkSchedule::where('consultant_id', $consultant->id)
+                ->whereYear('date', $craSignature->year)
                 ->with(['workType', 'leaveType'])
                 ->orderBy('date', 'asc')
                 ->get();
+            
+            // Pour les calculs de totaux, utiliser seulement les schedules du mois
+            $schedules = $allSchedules->filter(function($schedule) use ($startDate, $endDate) {
+                if (!$schedule->date) return false;
+                $scheduleDate = \Carbon\Carbon::parse($schedule->date);
+                return $scheduleDate->between($startDate, $endDate);
+            });
 
             $monthName = \Carbon\Carbon::create($craSignature->year, $craSignature->month, 1)
                 ->locale('fr')
@@ -921,7 +938,7 @@ class WorkScheduleController extends Controller
                 'monthName' => $monthName,
                 'month' => $craSignature->month,
                 'year' => $craSignature->year,
-                'schedules' => $schedules,
+                'schedules' => $allSchedules, // Passer tous les schedules pour extraire selected_days
                 'totalDaysWorked' => round($totalDaysWorked, 1),
                 'totalWeekendWork' => round($totalWeekendWork, 1),
                 'totalAbsences' => round($totalAbsences, 1),

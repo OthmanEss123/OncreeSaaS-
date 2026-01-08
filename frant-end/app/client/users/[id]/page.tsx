@@ -1623,10 +1623,10 @@ export default function UserDetailsPage() {
       )}
 
       {/* View Signed CRA Modal */}
-      {showViewCRAModal && selectedCRALog && user && (
+      {showViewCRAModal && selectedCRALog && (
         <div className="fixed inset-0 bg-gray-300 bg-opacity-50 flex items-center justify-center z-50 p-4">
           <motion.div 
-            className="bg-white rounded-lg p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.2 }}
@@ -1654,43 +1654,68 @@ export default function UserDetailsPage() {
               </button>
             </div>
 
-            {/* En-tête comme dans le PDF */}
-            <div className="text-center mb-6 pb-4 border-b-2 border-blue-600">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                COMPTE RENDU D'ACTIVITÉ (CRA)
-              </h2>
-              <p className="text-lg text-gray-700">
-                {new Date(selectedCRALog.year, selectedCRALog.month - 1, 1).toLocaleDateString('fr-FR', { 
-                  month: 'long', 
-                  year: 'numeric' 
-                })}
-              </p>
-            </div>
-
-            {/* Informations du consultant */}
-            <div className="mb-6 space-y-2 text-sm">
-              <p>
-                <strong>Consultant :</strong> {user.firstName} {user.lastName} ({user.email})
-              </p>
-              {projects && projects.length > 0 && projects[0] && (
-                <p>
-                  <strong>Projet :</strong> {projects[0].name}
-                </p>
-              )}
-              <p>
-                <strong>Date de génération :</strong> {new Date().toLocaleDateString('fr-FR', {
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
-              </p>
+            {/* Informations du CRA */}
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Détails du CRA</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600">Jours travaillés</p>
+                  <p className="text-lg font-semibold text-gray-900">{selectedCRALog.daysWorked}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Week-end travaillés</p>
+                  <p className="text-lg font-semibold text-gray-900">{selectedCRALog.weekendWork}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Jours d'absence</p>
+                  <p className="text-lg font-semibold text-gray-900">{selectedCRALog.absences}</p>
+                </div>
+                {selectedCRALog.workType && (
+                  <div>
+                    <p className="text-sm text-gray-600">Type de travail</p>
+                    <p className="text-lg font-semibold text-gray-900">{selectedCRALog.workType}</p>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Tableau détaillé des jours travaillés */}
             {(() => {
-              // Filtrer les schedules pour le mois/année sélectionné
+              // Extraire tous les jours de selected_days pour le mois sélectionné depuis TOUS les schedules
+              const allSelectedDays: Array<{ date: string; period: string; schedule?: any }> = []
+              
+              // Parcourir TOUS les schedules pour trouver ceux qui ont des selected_days du mois sélectionné
+              workSchedules.forEach(schedule => {
+                // Si selected_days existe, extraire tous les jours
+                if ((schedule as any).selected_days) {
+                  try {
+                    const selectedDaysData = typeof (schedule as any).selected_days === 'string'
+                      ? JSON.parse((schedule as any).selected_days)
+                      : (schedule as any).selected_days
+                    
+                    if (Array.isArray(selectedDaysData)) {
+                      selectedDaysData.forEach((dayPeriod: any) => {
+                        if (dayPeriod.date && dayPeriod.period) {
+                          const dayDate = new Date(dayPeriod.date)
+                          // Vérifier que le jour appartient au mois/année sélectionné
+                          if (dayDate.getMonth() + 1 === selectedCRALog.month && 
+                              dayDate.getFullYear() === selectedCRALog.year) {
+                            allSelectedDays.push({
+                              date: dayPeriod.date,
+                              period: dayPeriod.period,
+                              schedule: schedule
+                            })
+                          }
+                        }
+                      })
+                    }
+                  } catch (e) {
+                    console.error('Erreur parsing selected_days:', e)
+                  }
+                }
+              })
+
+              // Filtrer aussi les schedules directs pour le mois/année sélectionné
               const monthSchedules = workSchedules.filter(schedule => {
                 if (!schedule.date) return false
                 const scheduleDate = new Date(schedule.date)
@@ -1698,8 +1723,61 @@ export default function UserDetailsPage() {
                        scheduleDate.getFullYear() === selectedCRALog.year
               })
 
-              // Grouper par jour
+              // Grouper par jour (inclure les jours de selected_days ET les schedules directs)
               const daysData: Record<string, { date: Date; morning?: any; evening?: any }> = {}
+              
+              // D'abord, ajouter tous les jours de selected_days
+              allSelectedDays.forEach(dayPeriod => {
+                const date = new Date(dayPeriod.date)
+                const key = date.toISOString().split('T')[0]
+                
+                if (!daysData[key]) {
+                  daysData[key] = { date }
+                }
+                
+                // Chercher le schedule correspondant dans TOUS les schedules
+                let matchingSchedule = null
+                
+                if (dayPeriod.schedule) {
+                  const sDate = new Date(dayPeriod.schedule.date)
+                  const sKey = sDate.toISOString().split('T')[0]
+                  const sPeriod = (dayPeriod.schedule as any).period || 'morning'
+                  if (sKey === key && sPeriod === dayPeriod.period) {
+                    matchingSchedule = dayPeriod.schedule
+                  }
+                }
+                
+                if (!matchingSchedule) {
+                  matchingSchedule = workSchedules.find(s => {
+                    if (!s.date) return false
+                    const sDate = new Date(s.date)
+                    const sKey = sDate.toISOString().split('T')[0]
+                    const sPeriod = (s as any).period || 'morning'
+                    return sKey === key && sPeriod === dayPeriod.period
+                  })
+                }
+                
+                const scheduleToUse = matchingSchedule || { 
+                  date: dayPeriod.date,
+                  period: dayPeriod.period,
+                  days_worked: 0.5,
+                  absence_days: 0,
+                  workType: dayPeriod.schedule?.workType || dayPeriod.schedule?.work_type,
+                  leaveType: dayPeriod.schedule?.leaveType || dayPeriod.schedule?.leave_type,
+                  work_type_id: dayPeriod.schedule?.work_type_id,
+                  leave_type_id: dayPeriod.schedule?.leave_type_id,
+                  weekend_worked: 0,
+                  absence_type: dayPeriod.schedule?.absence_type || 'none'
+                }
+                
+                if (dayPeriod.period === 'morning') {
+                  daysData[key].morning = scheduleToUse
+                } else if (dayPeriod.period === 'evening') {
+                  daysData[key].evening = scheduleToUse
+                }
+              })
+              
+              // Ensuite, ajouter les schedules directs qui ne sont pas déjà dans selected_days
               monthSchedules.forEach(schedule => {
                 if (!schedule.date) return
                 const date = new Date(schedule.date)
@@ -1710,9 +1788,9 @@ export default function UserDetailsPage() {
                 }
                 
                 const period = (schedule as any).period || 'morning'
-                if (period === 'morning') {
+                if (period === 'morning' && !daysData[key].morning) {
                   daysData[key].morning = schedule
-                } else if (period === 'evening') {
+                } else if (period === 'evening' && !daysData[key].evening) {
                   daysData[key].evening = schedule
                 }
               })
@@ -1810,38 +1888,41 @@ export default function UserDetailsPage() {
 
             {/* Signatures */}
             <div className="mb-6">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-blue-600">
-                Signatures
-              </h4>
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Signatures</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Signature Consultant */}
-                <div className="border border-gray-300 rounded-lg p-4">
-                  <strong className="text-gray-900 block mb-3">Consultant</strong>
+                <div className="border-2 border-blue-200 rounded-lg p-4 bg-blue-50">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <CheckCircle className="h-5 w-5 text-blue-600" />
+                    <h5 className="font-semibold text-gray-900">Consultant</h5>
+                  </div>
                   {loadingSignatures ? (
-                    <div className="bg-gray-50 rounded border border-gray-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                    <div className="bg-white rounded border border-blue-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
                       <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
                     </div>
                   ) : selectedCRASignatures?.consultant ? (
                     <div>
-                      <div className="bg-gray-50 rounded border border-gray-300 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <div className="bg-white rounded border border-blue-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
                         {selectedCRASignatures.consultant.signature_data ? (
                           <img 
                             src={selectedCRASignatures.consultant.signature_data} 
                             alt="Signature Consultant" 
-                            className="max-w-full max-h-[70px] object-contain"
+                            className="max-w-full max-h-[80px] object-contain"
                           />
                         ) : (
                           <CheckCircle className="h-8 w-8 text-blue-600" />
                         )}
                       </div>
                       <p className="text-xs text-gray-600">
-                        Signé le {new Date(selectedCRASignatures.consultant.signed_at).toLocaleDateString('fr-FR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
+                        Signé le: <span className="font-medium text-gray-900">
+                          {new Date(selectedCRASignatures.consultant.signed_at).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
                       </p>
                     </div>
                   ) : (
@@ -1850,33 +1931,38 @@ export default function UserDetailsPage() {
                 </div>
 
                 {/* Signature Client */}
-                <div className="border border-gray-300 rounded-lg p-4">
-                  <strong className="text-gray-900 block mb-3">Client</strong>
+                <div className="border-2 border-green-200 rounded-lg p-4 bg-green-50">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <h5 className="font-semibold text-gray-900">Client</h5>
+                  </div>
                   {loadingSignatures ? (
-                    <div className="bg-gray-50 rounded border border-gray-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                    <div className="bg-white rounded border border-green-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
                       <Loader2 className="h-6 w-6 animate-spin text-green-600" />
                     </div>
                   ) : selectedCRASignatures?.client ? (
                     <div>
-                      <div className="bg-gray-50 rounded border border-gray-300 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <div className="bg-white rounded border border-green-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
                         {selectedCRASignatures.client.signature_data ? (
                           <img 
                             src={selectedCRASignatures.client.signature_data} 
                             alt="Signature Client" 
-                            className="max-w-full max-h-[70px] object-contain"
+                            className="max-w-full max-h-[80px] object-contain"
                           />
                         ) : (
                           <CheckCircle className="h-8 w-8 text-green-600" />
                         )}
                       </div>
                       <p className="text-xs text-gray-600">
-                        Signé le {new Date(selectedCRASignatures.client.signed_at).toLocaleDateString('fr-FR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
+                        Signé le: <span className="font-medium text-gray-900">
+                          {new Date(selectedCRASignatures.client.signed_at).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
                       </p>
                     </div>
                   ) : (
@@ -1885,33 +1971,38 @@ export default function UserDetailsPage() {
                 </div>
 
                 {/* Signature Manager */}
-                <div className="border border-gray-300 rounded-lg p-4">
-                  <strong className="text-gray-900 block mb-3">Manager</strong>
+                <div className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <CheckCircle className="h-5 w-5 text-red-600" />
+                    <h5 className="font-semibold text-gray-900">Manager</h5>
+                  </div>
                   {loadingSignatures ? (
-                    <div className="bg-gray-50 rounded border border-gray-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                    <div className="bg-white rounded border border-red-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
                       <Loader2 className="h-6 w-6 animate-spin text-red-600" />
                     </div>
                   ) : selectedCRASignatures?.manager ? (
                     <div>
-                      <div className="bg-gray-50 rounded border border-gray-300 p-3 mb-2 min-h-[80px] flex items-center justify-center">
+                      <div className="bg-white rounded border border-red-200 p-3 mb-2 min-h-[80px] flex items-center justify-center">
                         {selectedCRASignatures.manager.signature_data ? (
                           <img 
                             src={selectedCRASignatures.manager.signature_data} 
                             alt="Signature Manager" 
-                            className="max-w-full max-h-[70px] object-contain"
+                            className="max-w-full max-h-[80px] object-contain"
                           />
                         ) : (
                           <CheckCircle className="h-8 w-8 text-red-600" />
                         )}
                       </div>
                       <p className="text-xs text-gray-600">
-                        Signé le {new Date(selectedCRASignatures.manager.signed_at).toLocaleDateString('fr-FR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
+                        Signé le: <span className="font-medium text-gray-900">
+                          {new Date(selectedCRASignatures.manager.signed_at).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
                       </p>
                     </div>
                   ) : (

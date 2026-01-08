@@ -871,9 +871,43 @@ export default function ConsultantDetailsPage() {
               </p>
             </div>
 
-            {/* Tableau détaillé des jours travaillés */}
-            {(() => {
-              // Filtrer les schedules pour le mois/année sélectionné
+                        {/* Tableau détaillé des jours travaillés */}
+                        {(() => {
+              // Extraire tous les jours de selected_days pour le mois sélectionné depuis TOUS les schedules
+              const allSelectedDays: Array<{ date: string; period: string; schedule?: any }> = []
+              
+              // Parcourir TOUS les schedules pour trouver ceux qui ont des selected_days du mois sélectionné
+              workSchedules.forEach(schedule => {
+                // Si selected_days existe, extraire tous les jours
+                if ((schedule as any).selected_days) {
+                  try {
+                    const selectedDaysData = typeof (schedule as any).selected_days === 'string'
+                      ? JSON.parse((schedule as any).selected_days)
+                      : (schedule as any).selected_days
+                    
+                    if (Array.isArray(selectedDaysData)) {
+                      selectedDaysData.forEach((dayPeriod: any) => {
+                        if (dayPeriod.date && dayPeriod.period) {
+                          const dayDate = new Date(dayPeriod.date)
+                          // Vérifier que le jour appartient au mois/année sélectionné
+                          if (dayDate.getMonth() + 1 === selectedCRALog.month && 
+                              dayDate.getFullYear() === selectedCRALog.year) {
+                            allSelectedDays.push({
+                              date: dayPeriod.date,
+                              period: dayPeriod.period,
+                              schedule: schedule
+                            })
+                          }
+                        }
+                      })
+                    }
+                  } catch (e) {
+                    console.error('Erreur parsing selected_days:', e)
+                  }
+                }
+              })
+
+              // Filtrer aussi les schedules directs pour le mois/année sélectionné
               const monthSchedules = workSchedules.filter(schedule => {
                 if (!schedule.date) return false
                 const scheduleDate = new Date(schedule.date)
@@ -881,8 +915,65 @@ export default function ConsultantDetailsPage() {
                        scheduleDate.getFullYear() === selectedCRALog.year
               })
 
-              // Grouper par jour
+              // Grouper par jour (inclure les jours de selected_days ET les schedules directs)
               const daysData: Record<string, { date: Date; morning?: any; evening?: any }> = {}
+              
+              // D'abord, ajouter tous les jours de selected_days
+              allSelectedDays.forEach(dayPeriod => {
+                const date = new Date(dayPeriod.date)
+                const key = date.toISOString().split('T')[0]
+                
+                if (!daysData[key]) {
+                  daysData[key] = { date }
+                }
+                
+                // Chercher le schedule correspondant dans TOUS les schedules
+                // D'abord essayer avec le schedule associé au selected_days
+                let matchingSchedule = null
+                
+                if (dayPeriod.schedule) {
+                  const sDate = new Date(dayPeriod.schedule.date)
+                  const sKey = sDate.toISOString().split('T')[0]
+                  const sPeriod = (dayPeriod.schedule as any).period || 'morning'
+                  // Si le schedule correspond exactement à la date et période
+                  if (sKey === key && sPeriod === dayPeriod.period) {
+                    matchingSchedule = dayPeriod.schedule
+                  }
+                }
+                
+                // Sinon, chercher dans tous les schedules
+                if (!matchingSchedule) {
+                  matchingSchedule = workSchedules.find(s => {
+                    if (!s.date) return false
+                    const sDate = new Date(s.date)
+                    const sKey = sDate.toISOString().split('T')[0]
+                    const sPeriod = (s as any).period || 'morning'
+                    return sKey === key && sPeriod === dayPeriod.period
+                  })
+                }
+                
+                // Utiliser le schedule trouvé ou créer un objet basé sur le schedule parent
+                const scheduleToUse = matchingSchedule || { 
+                  date: dayPeriod.date,
+                  period: dayPeriod.period,
+                  days_worked: 0.5, // Par défaut, un jour sélectionné = 0.5 jour travaillé
+                  absence_days: 0,
+                  workType: dayPeriod.schedule?.workType || dayPeriod.schedule?.work_type,
+                  leaveType: dayPeriod.schedule?.leaveType || dayPeriod.schedule?.leave_type,
+                  work_type_id: dayPeriod.schedule?.work_type_id,
+                  leave_type_id: dayPeriod.schedule?.leave_type_id,
+                  weekend_worked: 0,
+                  absence_type: dayPeriod.schedule?.absence_type || 'none'
+                }
+                
+                if (dayPeriod.period === 'morning') {
+                  daysData[key].morning = scheduleToUse
+                } else if (dayPeriod.period === 'evening') {
+                  daysData[key].evening = scheduleToUse
+                }
+              })
+              
+              // Ensuite, ajouter les schedules directs qui ne sont pas déjà dans selected_days
               monthSchedules.forEach(schedule => {
                 if (!schedule.date) return
                 const date = new Date(schedule.date)
@@ -893,9 +984,9 @@ export default function ConsultantDetailsPage() {
                 }
                 
                 const period = (schedule as any).period || 'morning'
-                if (period === 'morning') {
+                if (period === 'morning' && !daysData[key].morning) {
                   daysData[key].morning = schedule
-                } else if (period === 'evening') {
+                } else if (period === 'evening' && !daysData[key].evening) {
                   daysData[key].evening = schedule
                 }
               })
@@ -904,6 +995,20 @@ export default function ConsultantDetailsPage() {
               const sortedDays = Object.values(daysData).sort((a, b) => 
                 a.date.getTime() - b.date.getTime()
               )
+
+              // Log pour déboguer
+              console.log('📅 Jours extraits pour le CRA:', {
+                mois: selectedCRALog.month,
+                année: selectedCRALog.year,
+                totalSelectedDays: allSelectedDays.length,
+                totalSortedDays: sortedDays.length,
+                allSelectedDays: allSelectedDays,
+                sortedDays: sortedDays.map(d => ({
+                  date: d.date.toISOString().split('T')[0],
+                  morning: !!d.morning,
+                  evening: !!d.evening
+                }))
+              })
 
               return (
                 <div className="mb-6">
@@ -1116,17 +1221,7 @@ export default function ConsultantDetailsPage() {
               >
                 Fermer
               </button>
-              {selectedCRALog && (
-                <button
-                  onClick={() => {
-                    handleDownloadPDF(selectedCRALog)
-                  }}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Télécharger PDF</span>
-                </button>
-              )}
+              
             </div>
           </motion.div>
         </div>
