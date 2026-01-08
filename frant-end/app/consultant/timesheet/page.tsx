@@ -1869,9 +1869,9 @@ Cette action est IRRÉVERSIBLE. Continuer ?`
           }
         }
         
-        const workScheduleData = {
+        const workScheduleData: any = {
           date: dateString,
-          period: null, // NULL pour les entrées mensuelles
+          // period n'est pas inclus pour les entrées mensuelles (sera défini à 'morning' par défaut côté backend)
           selected_days: JSON.stringify(monthSelectedDays), // NOUVEAU: Stocker les jours exacts sélectionnés
           work_type_selected_days: JSON.stringify(monthWorkTypeDays), // NOUVEAU: Jours sélectionnés pour types de travail
           leave_type_selected_days: JSON.stringify(monthLeaveTypeDays), // NOUVEAU: Jours sélectionnés pour congés

@@ -208,6 +208,12 @@ class WorkScheduleController extends Controller
                 $data['year'] = $data['year'] ?? $date->year;
             }
             
+            // S'assurer que period a toujours une valeur (par défaut 'morning')
+            // Même si selected_days est fourni, period est requis par la base de données
+            if (!isset($data['period']) || $data['period'] === null) {
+                $data['period'] = 'morning';
+            }
+            
             // Convertir les chaînes JSON en tableaux si nécessaire
             // Laravel valide 'json' ce qui peut convertir en tableau, mais on s'assure que c'est bien un tableau
             if (isset($data['selected_days']) && is_string($data['selected_days'])) {
@@ -225,7 +231,7 @@ class WorkScheduleController extends Controller
                 [
                     'consultant_id' => $data['consultant_id'],
                     'date' => $data['date'],
-                    'period' => $data['period'] ?? null
+                    'period' => $data['period']
                 ],
                 $data
             );
@@ -286,6 +292,13 @@ class WorkScheduleController extends Controller
             $data['month'] = $data['month'] ?? $date->month;
             $data['year'] = $data['year'] ?? $date->year;
         }
+        
+        // S'assurer que period n'est jamais null lors de la mise à jour
+        // Si period n'est pas fourni, on le garde tel quel (ne pas le mettre à null)
+        if (isset($data['period']) && $data['period'] === null) {
+            unset($data['period']); // Ne pas mettre à jour period si null est fourni
+        }
+        // Si period n'est pas fourni du tout, on ne le touche pas (garder la valeur existante)
         
         $workSchedule->update($data);
         return $workSchedule;
